@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-cli",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "CLI tool for managing Ghost content in Typesense",
   "type": "module",
   "main": "./dist/index.js",

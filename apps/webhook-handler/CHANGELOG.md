@@ -1,5 +1,21 @@
 # @magicpages/ghost-typesense-webhook
 
+## 1.0.0
+
+### Major Changes
+
+- 97f8fc1: Initial release of Ghost Typesense integration packages:
+  - Type-safe configuration and utilities
+  - Core functionality for Ghost-Typesense synchronization
+  - CLI tool for content management
+  - Webhook handler for real-time updates
+
+### Patch Changes
+
+- Updated dependencies [97f8fc1]
+  - @magicpages/ghost-typesense-config@1.0.0
+  - @magicpages/ghost-typesense-core@1.0.0
+
 ## 2.0.0
 
 ### Major Changes
