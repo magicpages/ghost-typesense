@@ -9,23 +9,54 @@ import './styles.css';
 
     // Function to take over Ghost's search functionality
     function takeOverSearch() {
-        // Override Ghost's search modal if it exists
-        const existingModal = document.getElementById('sodo-search-root');
-        if (existingModal) {
-            existingModal.innerHTML = ''; // Clear Ghost's search content
-            existingModal.style.display = 'none';
+        // Create a fake sodo-search-root to prevent Ghost's search from initializing
+        if (!document.getElementById('sodo-search-root')) {
+            const fakeRoot = document.createElement('div');
+            fakeRoot.id = 'sodo-search-root';
+            fakeRoot.style.display = 'none';
+            document.body.appendChild(fakeRoot);
+        }
+
+        // Disable Ghost's search script if it exists
+        const ghostSearchScript = document.querySelector('script[data-sodo-search]');
+        if (ghostSearchScript) {
+            ghostSearchScript.setAttribute('data-sodo-search', 'disabled');
         }
 
         // Override Ghost's keyboard shortcut handler
-        document.removeEventListener('keydown', window.__ghost_search_trigger);
-        window.__ghost_search_trigger = null;
+        if (window.__ghost_search_trigger) {
+            document.removeEventListener('keydown', window.__ghost_search_trigger);
+            window.__ghost_search_trigger = null;
+        }
 
-        // Disable Ghost's search initialization
-        window.ghost?.init?.search?.disable?.();
+        // Take over Ghost's custom trigger buttons
+        document.querySelectorAll('[data-ghost-search]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.magicSearch?.openModal();
+            });
+        });
 
-        // Clean up Ghost's search instance
-        if (window.ghost?.search) {
-            window.ghost.search = null;
+        // Handle cmd/ctrl + k shortcut
+        document.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                e.stopPropagation();
+                window.magicSearch?.openModal();
+            }
+        });
+
+        // Handle hash-based search trigger
+        window.addEventListener('hashchange', () => {
+            if (window.location.hash === '#/search') {
+                window.magicSearch?.openModal();
+            }
+        });
+
+        // Check initial hash
+        if (window.location.hash === '#/search') {
+            window.magicSearch?.openModal();
         }
     }
 

@@ -1,6 +1,17 @@
 # @magicpages/ghost-typesense-search-ui
 
-## 1.1.0
+## 1.1.2
+
+### Patch Changes
+
+- Improved Ghost search integration:
+  - Better handling of Ghost's native search takeover
+  - Support for cmd/ctrl + k keyboard shortcut
+  - Support for Ghost's search trigger buttons
+  - Proper handling of hash-based search trigger
+  - Fixed search modal initialization
+
+## 1.1.1
 
 ### Minor Changes
 
