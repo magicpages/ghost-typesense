@@ -1,5 +1,15 @@
 # @magicpages/ghost-typesense-search-ui
 
+## 1.1.3
+
+### Patch Changes
+
+- Fixed Ghost search integration:
+  - Fixed race condition with Ghost's search initialization
+  - Fixed timing of search takeover
+  - Fixed error when body is not ready for DOM manipulation
+  - Improved handling of multiple initialization attempts
+
 ## 1.1.2
 
 ### Patch Changes

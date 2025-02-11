@@ -6,16 +6,12 @@ import './styles.css';
 (function() {
     // Keep track of our initialization state
     let isInitialized = false;
+    let hasAttemptedTakeover = false;
 
     // Function to take over Ghost's search functionality
     function takeOverSearch() {
-        // Create a fake sodo-search-root to prevent Ghost's search from initializing
-        if (!document.getElementById('sodo-search-root')) {
-            const fakeRoot = document.createElement('div');
-            fakeRoot.id = 'sodo-search-root';
-            fakeRoot.style.display = 'none';
-            document.body.appendChild(fakeRoot);
-        }
+        if (hasAttemptedTakeover) return;
+        hasAttemptedTakeover = true;
 
         // Disable Ghost's search script if it exists
         const ghostSearchScript = document.querySelector('script[data-sodo-search]');
@@ -123,6 +119,8 @@ import './styles.css';
             this.init();
 
             isInitialized = true;
+            window.magicSearch = this;
+            takeOverSearch();
         }
 
         getSearchParameters() {
@@ -169,6 +167,14 @@ import './styles.css';
         }
 
         createSearchModal() {
+            // Create a fake sodo-search-root to prevent Ghost's search from initializing
+            if (!document.getElementById('sodo-search-root')) {
+                const fakeRoot = document.createElement('div');
+                fakeRoot.id = 'sodo-search-root';
+                fakeRoot.style.display = 'none';
+                document.body.appendChild(fakeRoot);
+            }
+
             const commonSearchesHtml = this.config.commonSearches.length ? `
                 <div class="mp-common-searches">
                     <div class="mp-common-searches-title">Common searches</div>
@@ -556,9 +562,6 @@ import './styles.css';
         }
     }
 
-    // Export to window
-    window.MagicPagesSearch = MagicPagesSearch;
-    
     // Auto-initialize when the script loads
     document.addEventListener('DOMContentLoaded', () => {
         // Initialize if we have a config or if #/search is in the URL
