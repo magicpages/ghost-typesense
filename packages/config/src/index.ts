@@ -69,47 +69,57 @@ export const REQUIRED_FIELDS = {
 } as const;
 
 /**
+ * Default collection fields that should be included
+ */
+export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
+  { name: 'id', type: 'string', optional: false },
+  { name: 'title', type: 'string', index: true, sort: true, optional: false },
+  { name: 'url', type: 'string', index: true, optional: false },
+  { name: 'slug', type: 'string', index: true, optional: false },
+  { name: 'html', type: 'string', index: true, optional: false },
+  { name: 'excerpt', type: 'string', index: true, optional: false },
+  { name: 'feature_image', type: 'string', index: false, optional: true },
+  { name: 'published_at', type: 'int64', sort: true, optional: false },
+  { name: 'updated_at', type: 'int64', sort: true, optional: false },
+  { name: 'tags', type: 'string[]', facet: true, optional: true },
+  { name: 'authors', type: 'string[]', facet: true, optional: true }
+];
+
+/**
  * Collection configuration schema with strict validation
  */
 export const CollectionConfigSchema = z.object({
   name: z.string().min(1, 'Collection name cannot be empty'),
   fields: z.array(CollectionFieldSchema)
-    .min(1, 'At least one field must be defined')
-    .refine(
-      (fields) => {
-        // Check if all required fields are present with correct types and not optional
-        const missingOrInvalidFields = Object.entries(REQUIRED_FIELDS)
-          .filter(([fieldName, spec]) => {
-            const field = fields.find(f => f.name === fieldName);
-            // A field is invalid if:
-            // 1. It doesn't exist
-            // 2. It has the wrong type
-            // 3. It's marked as optional
-            return !field || field.type !== spec.type || field.optional === true;
-          });
+    .optional()
+    .default(DEFAULT_COLLECTION_FIELDS)
+    .transform(fields => {
+      // Create a map of field names to their configurations from the provided fields
+      const fieldMap = new Map(fields.map(f => [f.name, f]));
 
-        if (missingOrInvalidFields.length > 0) {
-          const errors = missingOrInvalidFields.map(([fieldName, spec]) => {
-            const field = fields.find(f => f.name === fieldName);
-            if (!field) {
-              return `Missing required field "${fieldName}" (${spec.description})`;
-            }
-            if (field.type !== spec.type) {
-              return `Field "${fieldName}" must be of type "${spec.type}" (${spec.description})`;
-            }
-            if (field.optional === true) {
-              return `Field "${fieldName}" cannot be optional (${spec.description})`;
-            }
-            return `Invalid configuration for "${fieldName}"`;
-          });
-          throw new Error(`Invalid collection configuration:\n- ${errors.join('\n- ')}`);
+      // Ensure all required fields exist with correct configuration
+      Object.entries(REQUIRED_FIELDS).forEach(([fieldName, spec]) => {
+        const existingField = fieldMap.get(fieldName);
+        if (!existingField) {
+          // If required field doesn't exist, add it from defaults
+          const defaultField = DEFAULT_COLLECTION_FIELDS.find(f => f.name === fieldName);
+          if (defaultField) {
+            fieldMap.set(fieldName, defaultField);
+          }
+        } else {
+          // If field exists, ensure it has correct type and is not optional
+          if (existingField.type !== spec.type) {
+            throw new Error(`Field "${fieldName}" must be of type "${spec.type}" (${spec.description})`);
+          }
+          if (existingField.optional === true) {
+            throw new Error(`Field "${fieldName}" cannot be optional (${spec.description})`);
+          }
         }
-        return true;
-      },
-      {
-        message: 'Collection configuration is invalid'
-      }
-    ),
+      });
+
+      // Convert map back to array, keeping any additional custom fields
+      return Array.from(fieldMap.values());
+    }),
   default_sorting_field: z.string().optional()
 });
 
@@ -143,23 +153,6 @@ export function validateConfig(config: unknown): Config {
 }
 
 /**
- * Default collection fields that should be included
- */
-export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
-  { name: 'id', type: 'string', optional: false },
-  { name: 'title', type: 'string', index: true, sort: true, optional: false },
-  { name: 'url', type: 'string', index: true, optional: false },
-  { name: 'slug', type: 'string', index: true, optional: false },
-  { name: 'html', type: 'string', index: true, optional: false },
-  { name: 'excerpt', type: 'string', index: true, optional: false },
-  { name: 'feature_image', type: 'string', index: false, optional: true },
-  { name: 'published_at', type: 'int64', sort: true, optional: false },
-  { name: 'updated_at', type: 'int64', sort: true, optional: false },
-  { name: 'tags', type: 'string[]', facet: true, optional: true },
-  { name: 'authors', type: 'string[]', facet: true, optional: true }
-];
-
-/**
  * Creates a default configuration object
  * @param ghostUrl The URL of the Ghost instance
  * @param ghostKey The Ghost Content API key
@@ -177,7 +170,7 @@ export function createDefaultConfig(
 ): Config {
   // Clean the Typesense host URL
   const cleanedHost = cleanUrl(typesenseHost);
-  
+
   return {
     ghost: {
       url: ghostUrl,
@@ -199,4 +192,4 @@ export function createDefaultConfig(
       fields: DEFAULT_COLLECTION_FIELDS
     }
   };
-} 
+}

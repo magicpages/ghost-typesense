@@ -11,6 +11,8 @@ npm install -g @magicpages/ghost-typesense-cli
 ## Usage
 
 1. Create `ghost-typesense.config.json`:
+
+Minimal configuration:
 ```json
 {
   "ghost": {
@@ -31,6 +33,26 @@ npm install -g @magicpages/ghost-typesense-cli
   }
 }
 ```
+
+The tool comes with default field configurations optimized for Ghost CMS. These include:
+- Required fields: `id`, `title`, `url`, `slug`, `html`, `excerpt`, `published_at`, `updated_at`
+- Optional fields: `feature_image`, `tags`, `authors`
+
+You can override or add additional fields by specifying them in the config:
+
+```json
+{
+  "collection": {
+    "name": "ghost",
+    "fields": [
+      { "name": "title", "type": "string", "index": true, "sort": true },
+      { "name": "custom_field", "type": "string", "optional": true }
+    ]
+  }
+}
+```
+
+The tool will ensure all required fields are present with correct types while keeping your custom fields.
 
 2. Available commands:
 
