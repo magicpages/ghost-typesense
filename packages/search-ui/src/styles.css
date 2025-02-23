@@ -275,6 +275,12 @@ body {
     letter-spacing: -0.011em;
 }
 
+/* Hide the search clear button */
+.mp-search-input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    display: none;
+}
+
 @media (min-width: 640px) {
     .mp-search-input {
         font-size: 1.125rem;

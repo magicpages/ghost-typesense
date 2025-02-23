@@ -29,8 +29,7 @@
     "directory": "packages/search-ui"
   },
   "dependencies": {
-    "instantsearch.js": "^4.60.0",
-    "typesense-instantsearch-adapter": "^2.7.1"
+    "typesense": "^1.7.2"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
@@ -43,7 +42,8 @@
     "prettier": "^3.2.5",
     "rimraf": "^5.0.5",
     "rollup": "^4.12.0",
-    "rollup-plugin-postcss": "^4.0.2"
+    "rollup-plugin-postcss": "^4.0.2",
+    "rollup-plugin-visualizer": "^5.14.0"
   },
   "publishConfig": {
     "access": "public"

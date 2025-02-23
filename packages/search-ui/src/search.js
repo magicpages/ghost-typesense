@@ -1,8 +1,6 @@
-import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
-import instantsearch from 'instantsearch.js/dist/instantsearch.production.min';
-import { searchBox, hits } from 'instantsearch.js/es/widgets';
 
-// BUNDLED_CSS will be injected by rollup banner
+
+import Typesense from 'typesense';
 
 (function () {
     let isInitialized = false;
@@ -70,7 +68,6 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
                 collectionName: null,
                 commonSearches: [],
                 theme: 'system',
-                theme: 'system',
                 searchFields: {
                     title: { weight: 4, highlight: true },
                     excerpt: { weight: 2, highlight: true },
@@ -86,7 +83,7 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
-                throw new Error('MagicPagesSearch: Missing required configuration');
+                throw new Error('MagicPagesSearch: Missing required Typesense configuration');
             }
 
             this.selectedIndex = -1;
@@ -321,139 +318,175 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
         }
 
         initSearch() {
-            const searchParameters = this.getSearchParameters();
-
-            const typesenseInstantsearchAdapter = new TypesenseInstantSearchAdapter({
-                server: {
-                    apiKey: this.config.typesenseApiKey,
-                    nodes: this.config.typesenseNodes
-                },
-                additionalSearchParameters: searchParameters
-            });
-
-            this.search = instantsearch({
-                indexName: this.config.collectionName,
-                searchClient: typesenseInstantsearchAdapter.searchClient,
-                searchFunction: (helper) => this.handleSearch(helper)
-            });
-
             this.initWidgets();
-            this.search.start();
+            if (!this.searchInput) return;
+
+            // Initialize container references
+            this.cachedElements.commonSearches = this.doc.querySelector('.mp-common-searches');
+            this.cachedElements.emptyState = this.doc.getElementById('mp-empty-state');
+            this.cachedElements.loadingState = this.doc.getElementById('mp-loading-state');
         }
 
-        handleSearch(helper) {
-            if (!this.cachedElements.container) {
-                this.cachedElements.container = this.doc.getElementById('mp-hits');
-                this.cachedElements.commonSearches = this.doc.querySelector('.mp-common-searches');
-                this.cachedElements.emptyState = this.doc.getElementById('mp-empty-state');
-                this.cachedElements.loadingState = this.doc.getElementById('mp-loading-state');
-            }
-
-            const { container, commonSearches, emptyState, loadingState } = this.cachedElements;
-
-            if (emptyState && !helper.state.query) {
-                emptyState.classList.add('hidden');
-            }
-
-            const query = helper.state.query?.trim();
+        async handleSearch(query) {
+            const { commonSearches, emptyState, loadingState } = this.cachedElements;
+            query = query?.trim();
 
             if (!query) {
                 this.selectedIndex = -1;
-                if (container) container.classList.add('hidden');
+                if (this.hitsList) this.hitsList.classList.add('hidden');
                 if (commonSearches) commonSearches.classList.remove('hidden');
                 if (emptyState) emptyState.classList.add('hidden');
                 if (loadingState) loadingState.classList.remove('active');
                 return;
             }
 
-            // Only update UI immediately, defer search
+            // Update UI immediately
             if (commonSearches) commonSearches.classList.add('hidden');
-            if (container) container.classList.remove('hidden');
+            if (this.hitsList) this.hitsList.classList.remove('hidden');
             if (loadingState) loadingState.classList.add('active');
-            helper.search();
+
+            try {
+                // Initialize Typesense client if not already initialized
+                if (!this.typesenseClient) {
+                    // Typesense is now imported at the top
+                    this.typesenseClient = new Typesense.Client({
+                        nodes: this.config.typesenseNodes,
+                        apiKey: this.config.typesenseApiKey,
+                        connectionTimeoutSeconds: 2
+                    });
+                }
+
+                const searchParams = this.getSearchParameters();
+                const searchParameters = {
+                    q: query,
+                    query_by: searchParams.query_by,
+                    query_by_weights: searchParams.query_by_weights,
+                    highlight_full_fields: searchParams.highlight_full_fields,
+                    highlight_affix_num_tokens: searchParams.highlight_affix_num_tokens,
+                    include_fields: searchParams.include_fields,
+                    typo_tolerance: searchParams.typo_tolerance,
+                    num_typos: searchParams.num_typos,
+                    prefix: searchParams.prefix,
+                    per_page: searchParams.per_page
+                };
+
+                const results = await this.typesenseClient
+                    .collections(this.config.collectionName)
+                    .documents()
+                    .search(searchParameters);
+
+                if (loadingState) loadingState.classList.remove('active');
+
+                if (results.hits.length === 0) {
+                    if (emptyState) emptyState.classList.remove('hidden');
+                    if (this.hitsList) {
+                        this.hitsList.innerHTML = '';
+                        this.hitsList.classList.add('hidden');
+                    }
+                    return;
+                }
+
+                if (emptyState) emptyState.classList.add('hidden');
+                if (this.hitsList) {
+                    this.hitsList.innerHTML = results.hits.map(hit => {
+                        const div = document.createElement('div');
+                        div.innerHTML = hit.document.excerpt || hit.document.html || '';
+                        const text = div.textContent || div.innerText || '';
+                        const excerpt = text.trim().substring(0, 120).replace(/\s+[^\s]*$/, '...');
+                        const title = hit.document.title || 'Untitled';
+
+                        return `
+                            <a href="${hit.document.url || '#'}" 
+                                class="mp-result-link"
+                                aria-label="${title.replace(/<[^>]*>/g, '')}">
+                                <article class="mp-result-item" role="article">
+                                    <h3 class="mp-result-title" role="heading" aria-level="3">${title}</h3>
+                                    <p class="mp-result-excerpt" aria-label="Article excerpt">${excerpt}</p>
+                                </article>
+                            </a>
+                        `;
+                    }).join('');
+                    this.hitsList.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Search failed:', error);
+                if (loadingState) loadingState.classList.remove('active');
+                if (emptyState) emptyState.classList.remove('hidden');
+                if (this.hitsList) {
+                    this.hitsList.innerHTML = '';
+                    this.hitsList.classList.add('hidden');
+                }
+            }
         }
 
         initWidgets() {
-            this.searchBox = searchBox({
-                container: this.doc.querySelector('#mp-searchbox'),
-                placeholder: 'Search for anything',
-                autofocus: true,
-                showReset: false,
-                showSubmit: false,
-                showLoadingIndicator: false,
-                searchAsYouType: true,
-                queryHook: (query, search) => {
-                    // Clear any pending search
-                    if (this.searchDebounceTimeout) {
-                        clearTimeout(this.searchDebounceTimeout);
-                    }
+            // Initialize search box
+            const searchBoxContainer = this.doc.querySelector('#mp-searchbox');
+            if (!searchBoxContainer) return;
 
-                    // Use a shorter debounce for a more responsive feel while still preventing too many requests
-                    this.searchDebounceTimeout = setTimeout(() => {
-                        search(query);
-                    }, 80);
-                },
-                cssClasses: {
-                    root: '',
-                    form: '',
-                    input: 'mp-search-input',
-                    resetIcon: 'hidden',
-                    submitIcon: 'hidden',
-                }
+            // Clear any existing content
+            searchBoxContainer.innerHTML = '';
+
+            // Create search input
+            const searchForm = this.doc.createElement('form');
+            searchForm.className = '';
+            searchForm.setAttribute('novalidate', '');
+            searchForm.setAttribute('role', 'search');
+
+            const searchInput = this.doc.createElement('input');
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Search for anything';
+            searchInput.className = 'mp-search-input';
+            searchInput.setAttribute('autocomplete', 'off');
+            searchInput.setAttribute('autocorrect', 'off');
+            searchInput.setAttribute('autocapitalize', 'off');
+            searchInput.setAttribute('spellcheck', 'false');
+            searchInput.setAttribute('maxlength', '512');
+            searchInput.setAttribute('aria-label', 'Search');
+
+            searchForm.appendChild(searchInput);
+            searchBoxContainer.appendChild(searchForm);
+
+            // Store reference to search input
+            this.searchInput = searchInput;
+
+            // Set focus
+            setTimeout(() => searchInput.focus(), 0);
+
+            // Handle search input
+            searchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
             });
 
-            this.search.addWidgets([
-                this.searchBox,
-                hits({
-                    container: this.doc.querySelector('#mp-hits'),
-                    cssClasses: {
-                        root: '',
-                        list: 'mp-hits-list list-none',
-                        emptyRoot: 'hidden',
-                        item: ''
-                    },
-                    templates: {
-                        item: (hit) => {
-                            // Hide loading state when results are rendered
-                            const loadingState = this.doc.getElementById('mp-loading-state');
-                            if (loadingState) loadingState.classList.remove('active');
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value;
 
-                            try {
-                                const div = document.createElement('div');
-                                div.innerHTML = hit.excerpt || hit.html || '';
-                                const text = div.textContent || div.innerText || '';
-                                const excerpt = text.trim().substring(0, 120).replace(/\s+[^\s]*$/, '...');
-                                const title = hit._highlightResult?.title?.value || hit.title || 'Untitled';
+                // Clear any pending search
+                if (this.searchDebounceTimeout) {
+                    clearTimeout(this.searchDebounceTimeout);
+                }
 
-                                return `
-                                    <a href="${hit.url || '#'}" 
-                                        class="mp-result-link"
-                                        aria-label="${title.replace(/<[^>]*>/g, '')}">
-                                        <article class="mp-result-item" role="article">
-                                            <h3 class="mp-result-title" role="heading" aria-level="3">${title}</h3>
-                                            <p class="mp-result-excerpt" aria-label="Article excerpt">${excerpt}</p>
-                                        </article>
-                                    </a>
-                                `;
-                            } catch (error) {
-                                console.error('Error rendering hit:', error, hit);
-                                return '';
-                            }
-                        },
-                        empty: (results) => {
-                            if (results.query && results.query.trim()) {
-                                const emptyState = this.doc.getElementById('mp-empty-state');
-                                const container = this.doc.getElementById('mp-hits');
-                                const loadingState = this.doc.getElementById('mp-loading-state');
-                                if (container) container.classList.add('hidden');
-                                if (emptyState) emptyState.classList.remove('hidden');
-                                if (loadingState) loadingState.classList.remove('active');
-                            }
-                            return '';
-                        }
-                    }
-                })
-            ]);
+                // Use a shorter debounce for a more responsive feel while still preventing too many requests
+                this.searchDebounceTimeout = setTimeout(() => {
+                    this.handleSearch(query);
+                }, 80);
+            });
+
+            // Store references
+            this.searchInput = searchInput;
+            this.searchForm = searchForm;
+
+            // Initialize hits container
+            const hitsContainer = this.doc.querySelector('#mp-hits');
+            if (!hitsContainer) return;
+
+            // Create hits list
+            const hitsList = this.doc.createElement('div');
+            hitsList.className = 'mp-hits-list list-none';
+            hitsContainer.appendChild(hitsList);
+
+            // Store reference
+            this.hitsList = hitsList;
         }
 
         initEventListeners() {
@@ -554,7 +587,10 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
             container.addEventListener('touchend', handleClick);
         }
 
-        openModal() {
+        async openModal() {
+            if (!this.searchUI) {
+                await this.initSearch();
+            }
             this.iframe.style.pointerEvents = 'auto';
             this.iframe.style.opacity = '1';
             this.modal.classList.remove('hidden');
@@ -573,11 +609,10 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
             this.modal.classList.add('hidden');
             this.selectedIndex = -1;
 
-            const searchInput = this.doc.querySelector('.mp-search-input');
-            if (searchInput) {
-                searchInput.value = '';
+            if (this.searchInput) {
+                this.searchInput.value = '';
             }
-            this.search.helper.setQuery('').search();
+            this.handleSearch('');
 
             if (window.location.hash === '#/search') {
                 history.replaceState(null, null, window.location.pathname);
@@ -591,8 +626,7 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
                 return;
             }
 
-            const isSearchInput = e.target.classList.contains('mp-search-input');
-            if (e.target.tagName === 'INPUT' && !isSearchInput) return;
+            if (e.target !== this.searchInput) return;
             if (window.innerWidth < 640) return;
 
             switch (e.key) {
@@ -614,14 +648,9 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
         }
 
         navigateResults(direction) {
-            // Cache selector results
-            if (!this.cachedElements.results) {
-                this.cachedElements.results = this.doc.querySelectorAll('#mp-hits .mp-result-link, .mp-common-search-btn:not(.hidden)');
-            }
-
-            const results = [...this.cachedElements.results].filter(
-                el => el.offsetParent !== null && !el.closest('.hidden'));
-            this.cachedElements.results = null; // Clear cache for next navigation
+            const results = [...this.doc.querySelectorAll('.mp-result-link, .mp-common-search-btn:not(.hidden)')].filter(
+                el => el.offsetParent !== null && !el.closest('.hidden')
+            );
 
             if (results.length === 0) return;
 
@@ -640,7 +669,7 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
         }
 
         handleEnterKey() {
-            const results = [...this.doc.querySelectorAll('#mp-hits .mp-result-link, .mp-common-search-btn:not(.hidden)')].filter(
+            const results = [...this.doc.querySelectorAll('.mp-result-link, .mp-common-search-btn:not(.hidden)')].filter(
                 el => el.offsetParent !== null && !el.closest('.hidden')
             );
 
@@ -649,9 +678,8 @@ import { searchBox, hits } from 'instantsearch.js/es/widgets';
                 if (selectedElement.classList.contains('mp-result-link')) {
                     window.location.href = selectedElement.href;
                 } else {
-                    const searchBox = this.doc.querySelector('.mp-search-input');
-                    searchBox.value = selectedElement.textContent.trim();
-                    searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+                    this.searchInput.value = selectedElement.textContent.trim();
+                    this.searchInput.dispatchEvent(new Event('input', { bubbles: true }));
                 }
             }
         }
