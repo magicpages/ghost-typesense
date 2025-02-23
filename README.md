@@ -67,7 +67,7 @@ npm install -g @magicpages/ghost-typesense-cli
 {
   "ghost": {
     "url": "https://your-ghost-blog.com",
-    "key": "your-content-api-key",  // From Ghost Admin → Integrations
+    "key": "your-content-api-key",
     "version": "v5.0"
   },
   "typesense": {
@@ -76,10 +76,10 @@ npm install -g @magicpages/ghost-typesense-cli
       "port": 443,
       "protocol": "https"
     }],
-    "apiKey": "your-admin-api-key"  // Typesense Admin API key
+    "apiKey": "your-admin-api-key"
   },
   "collection": {
-    "name": "ghost"  // Must match search config
+    "name": "ghost"
   }
 }
 ```
