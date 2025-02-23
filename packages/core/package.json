@@ -1,0 +1,43 @@
+{
+  "name": "@magicpages/ghost-typesense-core",
+  "version": "1.3.0",
+  "description": "Core functionality for Ghost-Typesense integration",
+  "author": "MagicPages",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magicpages/ghost-typesense.git",
+    "directory": "packages/core"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "clean": "rimraf dist",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@magicpages/ghost-typesense-config": "*",
+    "@ts-ghost/content-api": "^4.0.6",
+    "@ts-ghost/core-api": "^4.0.6",
+    "typesense": "^1.7.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "tsup": "^8.0.1",
+    "rimraf": "^5.0.5",
+    "vitest": "^1.2.2",
+    "typescript": "^5.3.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

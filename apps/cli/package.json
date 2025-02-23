@@ -1,0 +1,39 @@
+{
+  "name": "@magicpages/ghost-typesense-cli",
+  "version": "1.3.0",
+  "description": "CLI tool for managing Ghost content in Typesense",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "ghost-typesense": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "clean": "rimraf dist",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@magicpages/ghost-typesense-config": "*",
+    "@magicpages/ghost-typesense-core": "*",
+    "commander": "^12.0.0",
+    "ora": "^8.0.1",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "tsup": "^8.0.1",
+    "rimraf": "^5.0.5",
+    "vitest": "^1.2.2",
+    "typescript": "^5.3.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

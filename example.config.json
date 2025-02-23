@@ -1,0 +1,77 @@
+{
+  "ghost": {
+    "url": "https://www.example.com",
+    "key": "abcdefghijklmnopqrstuvwxyz1234567890",
+    "version": "v5.0"
+  },
+  "typesense": {
+    "nodes": [
+      {
+        "host": "search.example.com",
+        "port": 443,
+        "protocol": "https"
+      }
+    ],
+    "apiKey": "example-api-key",
+    "connectionTimeoutSeconds": 10,
+    "retryIntervalSeconds": 0.1
+  },
+  "collection": {
+    "name": "1234567890",
+    "fields": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "index": true,
+        "sort": true
+      },
+      {
+        "name": "slug",
+        "type": "string",
+        "index": true
+      },
+      {
+        "name": "html",
+        "type": "string",
+        "index": true
+      },
+      {
+        "name": "excerpt",
+        "type": "string",
+        "index": true
+      },
+      {
+        "name": "feature_image",
+        "type": "string",
+        "index": false,
+        "optional": true
+      },
+      {
+        "name": "published_at",
+        "type": "int64",
+        "sort": true
+      },
+      {
+        "name": "updated_at",
+        "type": "int64",
+        "sort": true
+      },
+      {
+        "name": "tags",
+        "type": "string[]",
+        "facet": true,
+        "optional": true
+      },
+      {
+        "name": "authors",
+        "type": "string[]",
+        "facet": true,
+        "optional": true
+      }
+    ]
+  }
+}

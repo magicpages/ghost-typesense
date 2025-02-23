@@ -1,0 +1,11 @@
+{
+  "extends": ["../../.eslintrc.json"],
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "ignorePatterns": ["dist/**/*"],
+  "rules": {
+    "no-case-declarations": "off"
+  }
+} 
