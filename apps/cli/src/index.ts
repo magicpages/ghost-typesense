@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
 import { validateConfig } from '@magicpages/ghost-typesense-config';
@@ -9,10 +10,21 @@ import { GhostTypesenseManager } from '@magicpages/ghost-typesense-core';
 
 const program = new Command();
 
+// Import version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const { version } = JSON.parse(
+  readFileSync(resolve(__dirname, '../package.json'), 'utf-8')
+);
+
 program
   .name('ghost-typesense')
   .description('CLI tool for managing Ghost content in Typesense')
-  .version('1.0.0');
+  .version(version, '-V, --version', 'Output the version number')
+  .option('-v', 'Output the version number', () => {
+    console.log(version);
+    process.exit(0);
+  });
 
 program
   .command('init')

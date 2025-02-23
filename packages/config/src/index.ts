@@ -92,7 +92,7 @@ export const CollectionConfigSchema = z.object({
   name: z.string().min(1, 'Collection name cannot be empty'),
   fields: z.array(CollectionFieldSchema)
     .optional()
-    .default(DEFAULT_COLLECTION_FIELDS)
+    .transform(fields => fields || DEFAULT_COLLECTION_FIELDS)
     .transform(fields => {
       // Create a map of field names to their configurations from the provided fields
       const fieldMap = new Map(fields.map(f => [f.name, f]));

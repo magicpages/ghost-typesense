@@ -210,6 +210,20 @@ export class GhostTypesenseManager {
    */
   async clearCollection(): Promise<void> {
     const collection = this.typesense.collections(this.collectionName);
-    await collection.documents().delete();
+    await collection.delete();
+
+    const schema = {
+      name: this.collectionName,
+      fields: this.config.collection.fields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        facet: field.facet,
+        index: field.index,
+        optional: field.optional,
+        sort: field.sort
+      }))
+    };
+
+    await this.typesense.collections().create(schema);
   }
 } 
