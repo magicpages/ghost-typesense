@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-core",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Core functionality for Ghost-Typesense integration",
   "author": "MagicPages",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@magicpages/ghost-typesense-config": "^1.4.0",
+    "@magicpages/ghost-typesense-config": "^1.5.0",
     "@ts-ghost/content-api": "^4.0.6",
     "@ts-ghost/core-api": "^4.0.6",
     "typesense": "^1.7.2",
