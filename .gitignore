@@ -42,3 +42,5 @@ yarn-error.log*
 
 # Ignore local sodo-search folder used for development
 sodo-search/
+
+stats.html

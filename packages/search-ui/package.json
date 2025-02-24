@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-search-ui",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A vanilla JavaScript search UI for Ghost + Typesense integration",
   "type": "module",
   "main": "dist/search.min.js",
