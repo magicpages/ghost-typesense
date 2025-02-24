@@ -4,52 +4,54 @@ import Typesense from 'typesense';
 
 (function () {
     let isInitialized = false;
-
-    // Block Ghost's search script from loading
-    Object.defineProperty(window, 'SodoSearch', {
-        configurable: false,
-        enumerable: false,
-        get: () => ({
-            init: () => { },
-            preact: {
-                render: () => { },
-                h: () => { },
-                Component: class { }
-            }
-        }),
-        set: () => { }
-    });
-
-    // Remove any existing sodo-search elements
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1) {
-                    if (node.tagName === 'SCRIPT' && node.hasAttribute('data-sodo-search')) {
-                        node.remove();
-                    }
-                    if (node.id === 'sodo-search-root') {
-                        node.remove();
-                    }
-                }
-            }
-        }
-    });
-
-    observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true
-    });
+    let observer = null;
 
     function cleanupGhostSearch() {
+        // Only cleanup after we've initialized
+        if (!isInitialized) return;
+
         const searchScript = document.querySelector('script[data-sodo-search]');
         if (searchScript) searchScript.remove();
         const searchRoot = document.getElementById('sodo-search-root');
         if (searchRoot) searchRoot.remove();
     }
 
-    cleanupGhostSearch();
-    document.addEventListener('DOMContentLoaded', cleanupGhostSearch);
+    function setupCleanup() {
+        // Setup observer only after we've initialized
+        observer = new MutationObserver((mutations) => {
+            if (!isInitialized) return;
+
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType === 1) {
+                        if (node.tagName === 'SCRIPT' && node.hasAttribute('data-sodo-search')) {
+                            node.remove();
+                        } else if (node.id === 'sodo-search-root') {
+                            node.remove();
+                        }
+                    }
+                }
+            }
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+
+        // Also set up periodic cleanup just in case
+        const cleanupInterval = setInterval(cleanupGhostSearch, 100);
+        // Stop checking after 5 seconds
+        setTimeout(() => {
+            clearInterval(cleanupInterval);
+            if (observer) {
+                observer.disconnect();
+                observer = null;
+            }
+        }, 5000);
+    }
+
+
 
     class MagicPagesSearch {
         constructor(config = {}) {
@@ -57,6 +59,8 @@ import Typesense from 'typesense';
                 console.warn('MagicPagesSearch is already initialized');
                 return window.magicPagesSearch;
             }
+
+            this.isModalOpen = false;
 
             const defaultConfig = window.__MP_SEARCH_CONFIG__ || {
                 typesenseNodes: [{
@@ -114,7 +118,7 @@ import Typesense from 'typesense';
             }
         }
 
-        createIframe() {
+        async createIframe() {
             // Create iframe with initial styles
             this.iframe = document.createElement('iframe');
 
@@ -137,24 +141,25 @@ import Typesense from 'typesense';
                 transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
             `;
 
-            // Handle visual viewport changes (e.g., mobile keyboard)
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', () => {
-                    if (this.modal && this.modal.classList.contains('hidden')) return;
-
-                    const modalContainer = this.doc.querySelector('.mp-modal-container');
-                    if (modalContainer) {
-                        modalContainer.style.height = `${window.visualViewport.height}px`;
-                        modalContainer.style.transform = `translateY(${window.visualViewport.offsetTop}px)`;
-                    }
-                });
-            }
-
             // Update z-index on resize
             window.addEventListener('resize', () => {
                 const isMobile = window.innerWidth < 640;
                 this.iframe.style.zIndex = isMobile ? 3999999 : 3999997;
             });
+
+            // Ensure body exists
+            if (!document.body) {
+                await new Promise(resolve => {
+                    const observer = new MutationObserver(() => {
+                        if (document.body) {
+                            observer.disconnect();
+                            resolve();
+                        }
+                    });
+                    observer.observe(document.documentElement, { childList: true });
+                });
+            }
+
             document.body.appendChild(this.iframe);
 
             // Get iframe document
@@ -242,6 +247,19 @@ import Typesense from 'typesense';
                 attributes: true,
                 attributeFilter: ['class']
             });
+
+            // Handle visual viewport changes (e.g., mobile keyboard)
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    if (this.modal && this.modal.classList.contains('hidden')) return;
+
+                    const modalContainer = this.doc.querySelector('.mp-modal-container');
+                    if (modalContainer) {
+                        modalContainer.style.height = `${window.visualViewport.height}px`;
+                        modalContainer.style.transform = `translateY(${window.visualViewport.offsetTop}px)`;
+                    }
+                });
+            }
         }
 
         getCommonSearchesHtml() {
@@ -306,14 +324,35 @@ import Typesense from 'typesense';
             };
         }
 
-        init() {
-            this.createIframe();
-            this.initSearch();
+        async init() {
+            await this.setupUI();
+            await this.setupSearch();
             this.initEventListeners();
-            this.handleThemeChange();
+            this.setupHashHandling();
+            await this.handleInitialState();
+        }
 
-            if (window.location.hash === '#/search') {
-                this.openModal();
+        async setupUI() {
+            this.createIframe();
+            this.handleThemeChange();
+        }
+
+        async setupSearch() {
+            await this.initSearch();
+        }
+
+        setupHashHandling() {
+            window.addEventListener('hashchange', () => this.syncWithHash());
+        }
+
+        async handleInitialState() {
+            await this.syncWithHash();
+        }
+
+        async syncWithHash() {
+            const shouldBeOpen = window.location.hash === '#/search';
+            if (shouldBeOpen !== this.isModalOpen) {
+                await this.setModalState(shouldBeOpen);
             }
         }
 
@@ -323,7 +362,6 @@ import Typesense from 'typesense';
 
             // Initialize container references
             this.cachedElements.commonSearches = this.doc.querySelector('.mp-common-searches');
-            this.cachedElements.emptyState = this.doc.getElementById('mp-empty-state');
             this.cachedElements.loadingState = this.doc.getElementById('mp-loading-state');
         }
 
@@ -489,15 +527,10 @@ import Typesense from 'typesense';
             this.hitsList = hitsList;
         }
 
+
+
         initEventListeners() {
-            // Handle hash change
-            window.addEventListener('hashchange', () => {
-                if (window.location.hash === '#/search') {
-                    this.openModal();
-                } else if (this.modal && !this.modal.classList.contains('hidden')) {
-                    this.closeModal();
-                }
-            });
+
 
             // Close button
             const closeButton = this.doc.querySelector('.mp-close-button');
@@ -587,36 +620,64 @@ import Typesense from 'typesense';
             container.addEventListener('touchend', handleClick);
         }
 
-        async openModal() {
-            if (!this.searchUI) {
+        async setModalState(isOpen, options = {}) {
+            const { skipUrlUpdate = false } = options;
+
+            if (isOpen && !this.searchUI) {
                 await this.initSearch();
             }
-            this.iframe.style.pointerEvents = 'auto';
-            this.iframe.style.opacity = '1';
-            this.modal.classList.remove('hidden');
 
-            const searchInput = this.doc.querySelector('.mp-search-input');
-            if (searchInput) {
-                searchInput.focus();
+            if (isOpen) {
+                // Ensure iframe is ready
+                await new Promise(resolve => {
+                    const checkIframe = () => {
+                        if (this.iframe && this.doc && this.doc.readyState === 'complete') {
+                            resolve();
+                        } else {
+                            setTimeout(checkIframe, 10);
+                        }
+                    };
+                    checkIframe();
+                });
+
+                // Ensure styles are applied
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
 
-            history.replaceState(null, null, '#/search');
+            // Update UI state
+            this.iframe.style.pointerEvents = isOpen ? 'auto' : 'none';
+            this.iframe.style.opacity = isOpen ? '1' : '0';
+            this.modal.classList.toggle('hidden', !isOpen);
+
+            // Update search state
+            if (!isOpen) {
+                this.selectedIndex = -1;
+                if (this.searchInput) {
+                    this.searchInput.value = '';
+                }
+                this.handleSearch('');
+            } else {
+                const searchInput = this.doc.querySelector('.mp-search-input');
+                if (searchInput) {
+                    searchInput.focus();
+                }
+            }
+
+            // Update URL state
+            if (!skipUrlUpdate) {
+                const newHash = isOpen ? '#/search' : '';
+                if (window.location.hash !== newHash) {
+                    history.replaceState(null, null, newHash || window.location.pathname);
+                }
+            }
+        }
+
+        async openModal() {
+            await this.setModalState(true);
         }
 
         closeModal() {
-            this.iframe.style.opacity = '0';
-            this.iframe.style.pointerEvents = 'none';
-            this.modal.classList.add('hidden');
-            this.selectedIndex = -1;
-
-            if (this.searchInput) {
-                this.searchInput.value = '';
-            }
-            this.handleSearch('');
-
-            if (window.location.hash === '#/search') {
-                history.replaceState(null, null, window.location.pathname);
-            }
+            this.setModalState(false);
         }
 
         handleKeydown(e) {
@@ -713,12 +774,41 @@ import Typesense from 'typesense';
     // Export to window
     window.MagicPagesSearch = MagicPagesSearch;
 
-    // Auto-initialize
-    document.addEventListener('DOMContentLoaded', () => {
-        if (window.__MP_SEARCH_CONFIG__ ||
+    // Auto-initialize function
+    function initializeSearch() {
+        if (!window.magicPagesSearch && (
+            window.__MP_SEARCH_CONFIG__ ||
             window.location.hash === '#/search' ||
-            document.querySelectorAll('[data-ghost-search]').length > 0) {
+            document.querySelectorAll('[data-ghost-search]').length > 0
+        )) {
             window.magicPagesSearch = new MagicPagesSearch();
+            // Only after successful initialization, start cleaning up Ghost's search
+            setupCleanup();
         }
-    });
+    }
+
+    // Wait for document.body before initializing
+    function waitForBody() {
+        return new Promise(resolve => {
+            if (document.body) {
+                resolve();
+            } else {
+                const observer = new MutationObserver(() => {
+                    if (document.body) {
+                        observer.disconnect();
+                        resolve();
+                    }
+                });
+                observer.observe(document.documentElement, { childList: true });
+            }
+        });
+    }
+
+    // Try to initialize immediately if body exists
+    waitForBody().then(initializeSearch);
+
+    // Also try again on DOMContentLoaded just in case
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeSearch);
+    }
 })();

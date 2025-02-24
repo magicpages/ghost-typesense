@@ -39,3 +39,6 @@ yarn-error.log*
 .turbo
 # Local Netlify folder
 .netlify
+
+# Ignore local sodo-search folder used for development
+sodo-search/
