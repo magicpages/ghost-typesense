@@ -34,20 +34,18 @@
 }
 
 /* Dark theme based on system preference */
-@media (prefers-color-scheme: dark) {
-    #mp-search-wrapper {
-        --color-surface: rgb(32, 32, 32);
-        --color-surface-elevated: rgb(45, 45, 45);
-        --color-surface-hover: rgba(255, 255, 255, 0.04);
-        --color-text: rgb(250, 250, 250);
-        --color-text-secondary: rgb(161, 161, 161);
-        --color-border: rgba(255, 255, 255, 0.08);
-        --color-backdrop: rgba(0, 0, 0, 0.4);
-        --accent-color: var(--ghost-accent-color, #818cf8);
-        --accent-color-hover: color-mix(in srgb, white 15%, var(--accent-color));
-        --color-result-bg: rgb(38, 38, 38);
-        --color-result-hover: color-mix(in srgb, var(--accent-color) 8%, transparent);
-    }
+#mp-search-wrapper[data-theme="dark"] {
+    --color-surface: rgb(32, 32, 32);
+    --color-surface-elevated: rgb(45, 45, 45);
+    --color-surface-hover: rgba(255, 255, 255, 0.04);
+    --color-text: rgb(250, 250, 250);
+    --color-text-secondary: rgb(161, 161, 161);
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-backdrop: rgba(0, 0, 0, 0.4);
+    --accent-color: var(--ghost-accent-color, #818cf8);
+    --accent-color-hover: color-mix(in srgb, white 15%, var(--accent-color));
+    --color-result-bg: rgb(38, 38, 38);
+    --color-result-hover: color-mix(in srgb, var(--accent-color) 8%, transparent);
 }
 
 /* Base resets for iframe document */
@@ -262,8 +260,8 @@ body {
     -webkit-appearance: none;
     background: transparent;
     border-radius: 0.75rem;
-    border: none;
-    box-shadow: none;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
     color: var(--color-text);
     font-size: 1rem;
     height: 2.75rem;
@@ -291,9 +289,10 @@ body {
 
 .mp-search-input:focus,
 .mp-search-input:focus-visible {
-    background: var(--color-surface-hover);
+    background: var(--color-surface);
     outline: none;
-    box-shadow: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 1px var(--accent-color);
 }
 
 .mp-search-input::placeholder {
@@ -333,7 +332,7 @@ body {
     }
 }
 
-.dark .mp-search-header:before {
+#mp-search-wrapper[data-theme="dark"] .mp-search-header:before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='rgb(209, 213, 219)'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z' /%3E%3C/svg%3E");
 }
 

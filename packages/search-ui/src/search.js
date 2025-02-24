@@ -81,8 +81,8 @@ import Typesense from 'typesense';
 
             this.config = {
                 commonSearches: [],
-                ...defaultConfig,
                 ...config,
+                ...defaultConfig,
                 commonSearches: config.commonSearches || defaultConfig.commonSearches || []
             };
 
@@ -748,25 +748,18 @@ import Typesense from 'typesense';
         handleThemeChange() {
             if (!this.wrapper) return;
 
-            const setTheme = (isDark) => {
-                this.wrapper.classList.toggle('dark', isDark);
-            };
-
+            // Remove any existing theme classes
             this.wrapper.classList.remove('dark');
+            this.wrapper.setAttribute('data-theme', this.config.theme);
 
-            switch (this.config.theme) {
-                case 'dark':
-                    setTheme(true);
-                    break;
-                case 'light':
-                    setTheme(false);
-                    break;
-                case 'system':
-                default:
-                    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-                    setTheme(mediaQuery.matches);
-                    mediaQuery.addEventListener('change', (e) => setTheme(e.matches));
-                    break;
+            // If system theme, add listener for system changes
+            if (this.config.theme === 'system') {
+                const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                const updateSystemTheme = (e) => {
+                    this.wrapper.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+                };
+                updateSystemTheme(mediaQuery);
+                mediaQuery.addEventListener('change', updateSystemTheme);
             }
         }
     }
