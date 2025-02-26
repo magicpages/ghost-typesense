@@ -38,6 +38,14 @@ sodoSearch__url=https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/sea
 If you're using a managed host like Ghost(Pro), add this to your site's code injection (Settings → Code injection → Site Header):
 
 ```html
+<script src="https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/search.min.js"></script>
+```
+
+You can also self-host the `search.min.js` and add that URL instead of `https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/search.min.js`.
+
+For either of these options, you'll then need to add a code injection into your site's header to configure the search UI:
+
+```
 <script>
   window.__MP_SEARCH_CONFIG__ = {
     typesenseNodes: [{
@@ -50,10 +58,7 @@ If you're using a managed host like Ghost(Pro), add this to your site's code inj
     theme: 'system'  // Optional: 'light', 'dark', or 'system'
   };
 </script>
-<script src="https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/search.min.js"></script>
 ```
-
-You can also self-host the `search.min.js` and add that URL instead of `https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/search.min.js`.
 
 ### 3. Initial Content Sync
 
