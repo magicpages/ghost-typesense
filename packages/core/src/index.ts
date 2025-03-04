@@ -7,6 +7,7 @@ export interface Post {
   title: string;
   slug: string;
   html: string;
+  plaintext?: string;
   excerpt: string;
   feature_image?: string;
   published_at: number;
@@ -72,12 +73,28 @@ export class GhostTypesenseManager {
    */
   private transformPost(post: GhostPost): Post {
     console.log('Transforming post:', post.id, post.title);
+
+    // Ensure we have plaintext content
+    let plaintext = post.plaintext || '';
     
+    // If plaintext is empty but we have HTML, create plaintext from HTML
+    if (!plaintext && post.html) {
+      // Node.js environment - use regex to strip HTML tags
+      plaintext = post.html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags and content
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')   // Remove style tags and content
+        .replace(/<[^>]*>/g, ' ')  // Replace HTML tags with spaces
+        .replace(/&[a-z]+;/gi, ' ') // Replace HTML entities with spaces
+        .replace(/\s+/g, ' ')      // Normalize whitespace
+        .trim();
+    }
+
     const transformed: Post = {
       id: post.id,
       title: post.title,
       slug: post.slug,
       html: post.html,
+      plaintext: plaintext,
       excerpt: post.excerpt || '',
       published_at: new Date(post.published_at || Date.now()).getTime(),
       updated_at: new Date(post.updated_at || Date.now()).getTime()
@@ -114,7 +131,7 @@ export class GhostTypesenseManager {
    */
   async indexAllPosts(): Promise<void> {
     let allPosts: GhostPost[] = [];
-    
+
     const posts = this.ghost.posts
       .browse({
         limit: 15 // Default limit in Ghost
@@ -153,13 +170,13 @@ export class GhostTypesenseManager {
 
     console.log(`Found ${allPosts.length} posts to index`);
     const documents = allPosts.map((post) => this.transformPost(post));
-    
+
     try {
       const collection = this.typesense.collections(this.collectionName);
-      
+
       // Use upsert for each document instead of bulk import
       const results = await Promise.all(
-        documents.map(doc => 
+        documents.map(doc =>
           collection.documents().upsert(doc)
             .then(() => ({ success: true, id: doc.id }))
             .catch(error => ({ success: false, id: doc.id, error: error.message }))
@@ -168,7 +185,7 @@ export class GhostTypesenseManager {
 
       const succeeded = results.filter(r => r.success).length;
       const failed = results.filter(r => !r.success).length;
-      
+
       console.log(`Indexing complete: ${succeeded} succeeded, ${failed} failed`);
       if (failed > 0) {
         console.log('Failed documents:', results.filter(r => !r.success));
@@ -184,7 +201,9 @@ export class GhostTypesenseManager {
    */
   async indexPost(postId: string): Promise<void> {
     const post = await this.ghost.posts
-      .read({ id: postId })
+      .read({
+        id: postId
+      })
       .include({ tags: true, authors: true })
       .fetch();
 

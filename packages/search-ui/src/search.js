@@ -73,8 +73,9 @@ import Typesense from 'typesense';
                 commonSearches: [],
                 theme: 'system',
                 searchFields: {
-                    title: { weight: 4, highlight: true },
-                    excerpt: { weight: 2, highlight: true },
+                    title: { weight: 5, highlight: true },
+                    excerpt: { weight: 3, highlight: true },
+                    plaintext: { weight: 4, highlight: true },
                     html: { weight: 1, highlight: true }
                 }
             };
@@ -294,8 +295,9 @@ import Typesense from 'typesense';
             const fields = Object.keys(this.config.searchFields || {}).length > 0
                 ? this.config.searchFields
                 : {
-                    title: { weight: 4, highlight: true },
-                    excerpt: { weight: 2, highlight: true },
+                    title: { weight: 5, highlight: true },
+                    excerpt: { weight: 3, highlight: true },
+                    plaintext: { weight: 4, highlight: true },
                     html: { weight: 1, highlight: true }
                 };
 
@@ -315,12 +317,14 @@ import Typesense from 'typesense';
                 query_by: searchFields.join(','),
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
-                highlight_affix_num_tokens: 20,
-                include_fields: 'title,url,excerpt,html',
+                highlight_affix_num_tokens: 30, // Increased to capture more context
+                include_fields: 'title,url,excerpt,html,plaintext',
                 typo_tolerance: true,
                 num_typos: 2,
                 prefix: true,
-                per_page: 10
+                per_page: 20, // Increased to get more results
+                drop_tokens_threshold: 0, // Ensures all tokens are considered
+                enable_nested_fields: true
             };
         }
 
@@ -405,7 +409,9 @@ import Typesense from 'typesense';
                     typo_tolerance: searchParams.typo_tolerance,
                     num_typos: searchParams.num_typos,
                     prefix: searchParams.prefix,
-                    per_page: searchParams.per_page
+                    per_page: searchParams.per_page,
+                    drop_tokens_threshold: searchParams.drop_tokens_threshold || 0,
+                    enable_nested_fields: searchParams.enable_nested_fields || true
                 };
 
                 const results = await this.typesenseClient
@@ -427,10 +433,36 @@ import Typesense from 'typesense';
                 if (emptyState) emptyState.classList.add('hidden');
                 if (this.hitsList) {
                     this.hitsList.innerHTML = results.hits.map(hit => {
-                        const div = document.createElement('div');
-                        div.innerHTML = hit.document.excerpt || hit.document.html || '';
-                        const text = div.textContent || div.innerText || '';
-                        const excerpt = text.trim().substring(0, 120).replace(/\s+[^\s]*$/, '...');
+                        // Use plaintext if available, otherwise extract from HTML
+                        let textContent = '';
+                        if (hit.document.plaintext) {
+                            textContent = hit.document.plaintext;
+                        } else {
+                            const div = document.createElement('div');
+                            div.innerHTML = hit.document.excerpt || hit.document.html || '';
+                            textContent = div.textContent || div.innerText || '';
+                        }
+                        
+                        // Create a better excerpt that includes the search term context
+                        let excerpt = '';
+                        const query = this.searchInput?.value?.trim().toLowerCase() || '';
+                        
+                        if (query && textContent.toLowerCase().includes(query)) {
+                            // Find the position of the query in the text
+                            const queryPosition = textContent.toLowerCase().indexOf(query);
+                            // Get a window of text around the query
+                            const startPos = Math.max(0, queryPosition - 60);
+                            const endPos = Math.min(textContent.length, queryPosition + query.length + 60);
+                            excerpt = textContent.substring(startPos, endPos);
+                            
+                            // Add ellipsis if we're not at the beginning or end
+                            if (startPos > 0) excerpt = '...' + excerpt;
+                            if (endPos < textContent.length) excerpt = excerpt + '...';
+                        } else {
+                            // Fallback to standard excerpt if query not found
+                            excerpt = textContent.trim().substring(0, 160).replace(/\s+[^\s]*$/, '...');
+                        }
+                        
                         const title = hit.document.title || 'Untitled';
 
                         return `
