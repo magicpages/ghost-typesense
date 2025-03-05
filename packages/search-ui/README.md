@@ -61,6 +61,7 @@ window.__MP_SEARCH_CONFIG__ = {
     typesenseApiKey: 'your-search-only-api-key', // Under no circumstances use an admin API key here. These values are stored client-side and are therefore accessible to the end user.
     collectionName: 'your-collection-name',
     theme: 'system', // 'light', 'dark', or 'system'
+    enableHighlighting: true, // highlight search terms in results
     commonSearches: ['Getting Started', 'Tutorials', 'API'] // can also be empty
 };
 </script>
@@ -74,6 +75,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `typesenseApiKey` | `String` | Yes | Search-only API key from Typesense |
 | `collectionName` | `String` | Yes | Name of your Typesense collection |
 | `theme` | `String` | No | UI theme: 'light', 'dark', or 'system' (default) |
+| `enableHighlighting` | `Boolean` | No | Whether to highlight search terms in results (default: true) |
 | `commonSearches` | `Array` | No | Array of suggested search terms |
 | `searchFields` | `Object` | No | Customize field weights and highlighting |
 

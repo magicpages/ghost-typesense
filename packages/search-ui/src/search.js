@@ -72,11 +72,11 @@ import Typesense from 'typesense';
                 collectionName: null,
                 commonSearches: [],
                 theme: 'system',
+                enableHighlighting: true,
                 searchFields: {
                     title: { weight: 5, highlight: true },
                     excerpt: { weight: 3, highlight: true },
-                    plaintext: { weight: 4, highlight: true },
-                    html: { weight: 1, highlight: true }
+                    plaintext: { weight: 4, highlight: true }
                 }
             };
 
@@ -297,8 +297,7 @@ import Typesense from 'typesense';
                 : {
                     title: { weight: 5, highlight: true },
                     excerpt: { weight: 3, highlight: true },
-                    plaintext: { weight: 4, highlight: true },
-                    html: { weight: 1, highlight: true }
+                    plaintext: { weight: 4, highlight: true }
                 };
 
             const searchFields = [];
@@ -317,14 +316,15 @@ import Typesense from 'typesense';
                 query_by: searchFields.join(','),
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
-                highlight_affix_num_tokens: 30, // Increased to capture more context
-                include_fields: 'title,url,excerpt,html,plaintext',
+                highlight_affix_num_tokens: 30,
+                include_fields: 'title,url,excerpt,plaintext,published_at',
                 typo_tolerance: true,
                 num_typos: 2,
                 prefix: true,
-                per_page: 20, // Increased to get more results
-                drop_tokens_threshold: 0, // Ensures all tokens are considered
-                enable_nested_fields: true
+                per_page: 20,
+                drop_tokens_threshold: 0,
+                enable_nested_fields: true,
+                sort_by: '_text_match:desc,published_at:desc'
             };
         }
 
@@ -433,28 +433,45 @@ import Typesense from 'typesense';
                 if (emptyState) emptyState.classList.add('hidden');
                 if (this.hitsList) {
                     this.hitsList.innerHTML = results.hits.map(hit => {
-                        // Use plaintext if available, otherwise extract from HTML
-                        let textContent = '';
-                        if (hit.document.plaintext) {
-                            textContent = hit.document.plaintext;
-                        } else {
-                            const div = document.createElement('div');
-                            div.innerHTML = hit.document.excerpt || hit.document.html || '';
-                            textContent = div.textContent || div.innerText || '';
+                        // Always use plaintext as our primary text content source
+                        let textContent = hit.document.plaintext || '';
+
+                        // If for some reason plaintext is empty, use excerpt as fallback
+                        if (!textContent) {
+                            textContent = hit.document.excerpt || '';
                         }
-                        
+
                         // Create a better excerpt that includes the search term context
                         let excerpt = '';
                         const query = this.searchInput?.value?.trim().toLowerCase() || '';
-                        
+
                         if (query && textContent.toLowerCase().includes(query)) {
                             // Find the position of the query in the text
                             const queryPosition = textContent.toLowerCase().indexOf(query);
                             // Get a window of text around the query
                             const startPos = Math.max(0, queryPosition - 60);
                             const endPos = Math.min(textContent.length, queryPosition + query.length + 60);
-                            excerpt = textContent.substring(startPos, endPos);
-                            
+                            const rawExcerpt = textContent.substring(startPos, endPos);
+
+                            // Add highlighting to the query terms in the excerpt if enabled
+                            const words = query.split(/\s+/);
+                            let highlightedExcerpt = rawExcerpt;
+
+                            // Apply highlighting only if it's enabled in config
+                            if (this.config.enableHighlighting !== false) {
+                                // Sort words by length in descending order to handle longer phrases first
+                                words.sort((a, b) => b.length - a.length);
+
+                                // Highlight each word
+                                for (const word of words) {
+                                    if (word.length < 2) continue; // Skip very short words
+                                    const regex = new RegExp(`(${word})`, 'gi');
+                                    highlightedExcerpt = highlightedExcerpt.replace(regex, '<mark class="mp-highlight">$1</mark>');
+                                }
+                            }
+
+                            excerpt = highlightedExcerpt;
+
                             // Add ellipsis if we're not at the beginning or end
                             if (startPos > 0) excerpt = '...' + excerpt;
                             if (endPos < textContent.length) excerpt = excerpt + '...';
@@ -462,8 +479,24 @@ import Typesense from 'typesense';
                             // Fallback to standard excerpt if query not found
                             excerpt = textContent.trim().substring(0, 160).replace(/\s+[^\s]*$/, '...');
                         }
-                        
-                        const title = hit.document.title || 'Untitled';
+
+                        // Get the original title
+                        let title = hit.document.title || 'Untitled';
+
+                        // Highlight the title if it contains the search query and highlighting is enabled
+                        if (query && this.config.enableHighlighting !== false) {
+                            const words = query.split(/\s+/);
+
+                            // Sort words by length in descending order to handle longer phrases first
+                            words.sort((a, b) => b.length - a.length);
+
+                            // Highlight each word in the title
+                            for (const word of words) {
+                                if (word.length < 2) continue; // Skip very short words
+                                const regex = new RegExp(`(${word})`, 'gi');
+                                title = title.replace(regex, '<mark class="mp-highlight">$1</mark>');
+                            }
+                        }
 
                         return `
                             <a href="${hit.document.url || '#'}" 

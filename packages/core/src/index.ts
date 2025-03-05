@@ -6,8 +6,8 @@ export interface Post {
   id: string;
   title: string;
   slug: string;
-  html: string;
-  plaintext?: string;
+  html?: string;
+  plaintext: string;
   excerpt: string;
   feature_image?: string;
   published_at: number;
@@ -76,24 +76,48 @@ export class GhostTypesenseManager {
 
     // Ensure we have plaintext content
     let plaintext = post.plaintext || '';
-    
-    // If plaintext is empty but we have HTML, create plaintext from HTML
-    if (!plaintext && post.html) {
-      // Node.js environment - use regex to strip HTML tags
-      plaintext = post.html
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags and content
-        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')   // Remove style tags and content
-        .replace(/<[^>]*>/g, ' ')  // Replace HTML tags with spaces
-        .replace(/&[a-z]+;/gi, ' ') // Replace HTML entities with spaces
-        .replace(/\s+/g, ' ')      // Normalize whitespace
-        .trim();
+
+    // Always try to enhance/improve plaintext extraction from HTML 
+    // even if plaintext already exists
+    if (post.html) {
+      // Use a more comprehensive approach to extract text including from links and special formatting
+      // First remove script and style tags
+      let cleanHtml = post.html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+      // Extract text from anchor tags to preserve linked text
+      cleanHtml = cleanHtml.replace(/<a[^>]*>([^<]*)<\/a>/gi, ' $1 ');
+
+      // Extract text from other formatting tags (strong, em, b, i, etc.)
+      cleanHtml = cleanHtml.replace(/<(strong|b|em|i|mark|span)[^>]*>([^<]*)<\/(strong|b|em|i|mark|span)>/gi, ' $2 ');
+
+      // Remove all remaining HTML tags
+      cleanHtml = cleanHtml.replace(/<[^>]*>/g, ' ');
+
+      // Handle common HTML entities
+      cleanHtml = cleanHtml
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&[a-z]+;/gi, ' '); // Replace any remaining entities
+
+      // Normalize whitespace and trim
+      cleanHtml = cleanHtml.replace(/\s+/g, ' ').trim();
+
+      // If we didn't have plaintext or if our extracted text is more comprehensive, use it
+      if (!plaintext || cleanHtml.length > plaintext.length) {
+        plaintext = cleanHtml;
+      }
     }
 
     const transformed: Post = {
       id: post.id,
       title: post.title,
       slug: post.slug,
-      html: post.html,
       plaintext: plaintext,
       excerpt: post.excerpt || '',
       published_at: new Date(post.published_at || Date.now()).getTime(),
