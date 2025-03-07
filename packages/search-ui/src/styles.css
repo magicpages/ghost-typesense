@@ -528,11 +528,14 @@ body {
 
 /* Highlight styles */
 .ais-Highlight-highlighted,
-.ais-Snippet-highlighted {
+.ais-Snippet-highlighted,
+.mp-highlight {
     background: none;
     background: color-mix(in srgb, var(--accent-color) 15%, transparent);
     color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
     font-weight: 600;
+    border-radius: 2px;
+    padding: 0 1px;
 }
 
 /* Mobile optimizations */

@@ -35,8 +35,10 @@ Minimal configuration:
 ```
 
 The tool comes with default field configurations optimized for Ghost CMS. These include:
-- Required fields: `id`, `title`, `url`, `slug`, `html`, `excerpt`, `published_at`, `updated_at`
+- Required fields: `id`, `title`, `url`, `slug`, `html`, `plaintext`, `excerpt`, `published_at`, `updated_at`
 - Optional fields: `feature_image`, `tags`, `authors`
+
+The `plaintext` field is automatically generated from HTML content if not provided by Ghost, ensuring better search quality.
 
 You can override or add additional fields by specifying them in the config:
 
@@ -46,6 +48,7 @@ You can override or add additional fields by specifying them in the config:
     "name": "ghost",
     "fields": [
       { "name": "title", "type": "string", "index": true, "sort": true },
+      { "name": "plaintext", "type": "string", "index": true },
       { "name": "custom_field", "type": "string", "optional": true }
     ]
   }

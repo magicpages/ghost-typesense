@@ -68,7 +68,29 @@ The webhook handler:
 1. Validates the secret in the URL query parameter
 2. Processes post status changes (publish/unpublish/update)
 3. Updates the Typesense index accordingly
+4. Automatically generates plaintext content from HTML for better search quality
+5. Ensures content is properly formatted for optimal search results
 
+### Content Processing
+
+When a post is published or updated, the handler:
+
+1. **Fetches complete data**: Gets the full post details from Ghost including tags and authors
+2. **Transforms content**: 
+   - Converts timestamps to numeric formats for sorting
+   - Extracts tag and author information 
+   - Generates clean plaintext content from HTML by:
+     - Removing script and style tags with their content
+     - Replacing HTML tags with spaces to preserve word boundaries
+     - Normalizing whitespace
+     - Creating a clean, searchable text version
+3. **Updates index**: Adds or updates the document in Typesense with the transformed content
+4. **Optimizes for search**: Ensures the content is indexed in a way that enables:
+   - Context-aware search result highlighting
+   - Relevant excerpts showing search terms in context
+   - Accurate full-text search across all content
+
+This automatic transformation ensures that your search index stays in sync with your Ghost content while providing the best possible search experience for your users.
 
 ## License
 

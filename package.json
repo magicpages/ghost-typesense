@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": false,
   "type": "module",
   "workspaces": [
@@ -23,6 +23,7 @@
     "@types/node": "^20.11.17",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "dotenv": "^16.4.7",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "inquirer": "^12.4.2",
