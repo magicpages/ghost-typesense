@@ -13,11 +13,6 @@ A beautiful, accessible search interface for Ghost blogs using Typesense. This p
 - 📱 Responsive design for all devices
 - 🎯 Configurable common searches suggestions
 - ⚡ Lightweight and performant
-- 🔎 Smart context-aware search result highlighting
-- 📝 Plaintext content search for improved relevance
-- 💡 Exact phrase matching support
-- 🔍 Contextual excerpts that show search term in context
-- 🧩 Support for nested fields
 
 ## Installation
 
@@ -66,7 +61,6 @@ window.__MP_SEARCH_CONFIG__ = {
     typesenseApiKey: 'your-search-only-api-key', // Under no circumstances use an admin API key here. These values are stored client-side and are therefore accessible to the end user.
     collectionName: 'your-collection-name',
     theme: 'system', // 'light', 'dark', or 'system'
-    enableHighlighting: true, // highlight search terms in results
     commonSearches: ['Getting Started', 'Tutorials', 'API'] // can also be empty
 };
 </script>
@@ -80,7 +74,6 @@ window.__MP_SEARCH_CONFIG__ = {
 | `typesenseApiKey` | `String` | Yes | Search-only API key from Typesense |
 | `collectionName` | `String` | Yes | Name of your Typesense collection |
 | `theme` | `String` | No | UI theme: 'light', 'dark', or 'system' (default) |
-| `enableHighlighting` | `Boolean` | No | Whether to highlight search terms in results (default: true) |
 | `commonSearches` | `Array` | No | Array of suggested search terms |
 | `searchFields` | `Object` | No | Customize field weights and highlighting |
 
@@ -90,14 +83,11 @@ Customize search relevance with field weights and highlighting:
 
 ```javascript
 searchFields: {
-    title: { weight: 5, highlight: true },
-    plaintext: { weight: 4, highlight: true },
-    excerpt: { weight: 3, highlight: true },
+    title: { weight: 4, highlight: true },
+    excerpt: { weight: 2, highlight: true },
     html: { weight: 1, highlight: true }
 }
 ```
-
-The default weights are optimized to provide the most relevant results, prioritizing title matches, then plaintext content, followed by excerpt and HTML content.
 
 ## Usage
 
@@ -105,25 +95,7 @@ The search interface can be triggered in multiple ways:
 - Click the search icon in your Ghost theme
 - Press `/` on your keyboard
 - Navigate to `/#/search` URL
-- Use URL query parameters: `/?s=your search term` or `/?q=your search term` 
 - Programmatically via `window.magicPagesSearch.openModal()`
-
-### URL-Based Search
-
-You can trigger searches directly from URLs using two formats:
-
-#### 1. Query Parameter Format
-```
-https://yourblog.com/?s=getting+started
-https://yourblog.com/?q=tutorials
-```
-
-Both `s` and `q` query parameters are supported for maximum compatibility with legacy links.
-
-#### 2. Clean Hash Path Format
-```
-https://yourblog.com/#/search/getting+started
-```
 
 ### Keyboard Shortcuts
 

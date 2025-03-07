@@ -63,7 +63,6 @@ export const REQUIRED_FIELDS = {
   url: { type: 'string' as const, description: 'Full URL to the post' },
   slug: { type: 'string' as const, description: 'URL-friendly post slug' },
   html: { type: 'string' as const, description: 'Post content in HTML format' },
-  plaintext: { type: 'string' as const, description: 'Post content in plain text format' },
   excerpt: { type: 'string' as const, description: 'Post excerpt or summary' },
   published_at: { type: 'int64' as const, description: 'Post publication timestamp' },
   updated_at: { type: 'int64' as const, description: 'Post last update timestamp' }
@@ -78,7 +77,6 @@ export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
   { name: 'url', type: 'string', index: true, optional: false },
   { name: 'slug', type: 'string', index: true, optional: false },
   { name: 'html', type: 'string', index: true, optional: false },
-  { name: 'plaintext', type: 'string', index: true, optional: false },
   { name: 'excerpt', type: 'string', index: true, optional: false },
   { name: 'feature_image', type: 'string', index: false, optional: true },
   { name: 'published_at', type: 'int64', sort: true, optional: false },
