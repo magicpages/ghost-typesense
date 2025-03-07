@@ -44,3 +44,4 @@ yarn-error.log*
 sodo-search/
 
 stats.html
+config.json
