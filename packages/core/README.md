@@ -1,4 +1,4 @@
- # @magicpages/ghost-typesense-core
+# @magicpages/ghost-typesense-core
 
 Core functionality for Ghost-Typesense integration. This package provides the essential services for indexing Ghost CMS content in Typesense.
 
@@ -9,6 +9,7 @@ Core functionality for Ghost-Typesense integration. This package provides the es
 - ⚙️ Flexible configuration for custom fields and schema
 - 🚀 Efficient pagination handling for large Ghost sites
 - 🧩 TypeScript interfaces for type safety
+- 📝 Automatic plaintext generation from HTML content to make sure the most relevant content is indexed
 
 ## Installation
 
@@ -69,6 +70,7 @@ const config = {
       { name: 'title', type: 'string', index: true, sort: true },
       { name: 'slug', type: 'string', index: true },
       { name: 'html', type: 'string', index: true },
+      { name: 'plaintext', type: 'string', index: true },
       { name: 'excerpt', type: 'string', index: true },
       { name: 'feature_image', type: 'string', index: false, optional: true },
       { name: 'published_at', type: 'int64', sort: true },
@@ -110,6 +112,28 @@ Creates a new instance with the provided configuration.
 
 - **`async clearCollection(): Promise<void>`**  
   Removes all documents from the collection and recreates it with the same schema.
+
+## Content Transformation
+
+The package automatically handles content transformation from Ghost to Typesense, including:
+
+- Converting timestamps to numeric formats for sorting
+- Extracting tags and authors as arrays
+- Generating plaintext content from HTML for improved search relevance
+- Ensuring all required fields are properly formatted
+
+### Plaintext Generation
+
+The plaintext generation process is particularly important for search quality:
+
+  - Removes script tags and their content to eliminate JavaScript
+  - Removes style tags and their content to eliminate CSS
+  - Replaces all HTML tags with spaces to preserve word boundaries
+  - Replaces HTML entities with spaces
+  - Normalizes whitespace by collapsing multiple spaces to single spaces
+  - Trims leading and trailing whitespace
+
+Manual search tests have shown that this approach is more accurate than using the HTML content alone or Ghost's default plaintext field.
 
 ## Related Packages
 

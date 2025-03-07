@@ -12,7 +12,8 @@ export interface Post {
   feature_image?: string;
   published_at: number;
   updated_at: number;
-  tags?: string[];
+  'tags.name'?: string[];
+  'tags.slug'?: string[];
   authors?: string[];
   [key: string]: unknown;
 }
@@ -53,6 +54,7 @@ export class GhostTypesenseManager {
       await collection.delete();
     }
 
+    // Add support for nested fields
     const schema = {
       name: this.collectionName,
       fields: this.config.collection.fields.map((field) => ({
@@ -62,7 +64,8 @@ export class GhostTypesenseManager {
         index: field.index,
         optional: field.optional,
         sort: field.sort
-      }))
+      })),
+      enable_nested_fields: true // Enable nested fields support
     };
 
     await this.typesense.collections().create(schema);
@@ -130,7 +133,9 @@ export class GhostTypesenseManager {
 
     const tags = post.tags;
     if (tags && Array.isArray(tags) && tags.length > 0) {
-      transformed.tags = tags.map((tag: { name: string }) => tag.name);
+      // Use dot notation for nested tag fields
+      transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
+      transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
     }
 
     const authors = post.authors;

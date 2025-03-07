@@ -40,9 +40,40 @@ const config: Config = {
     apiKey: 'your-typesense-api-key'
   },
   collection: {
-    name: 'ghost'
+    name: 'ghost',
+    // Optional: customize fields
+    fields: [
+      { name: 'title', type: 'string', index: true, sort: true },
+      { name: 'plaintext', type: 'string', index: true },
+      { name: 'custom_field', type: 'string', optional: true },
+      // Nested fields are supported with dot notation
+      { name: 'tags.name', type: 'string', facet: true, optional: true },
+      { name: 'authors.name', type: 'string', facet: true, optional: true }
+    ]
   }
 };
+```
+
+## Default Fields
+
+The package includes default fields optimized for Ghost content, including:
+
+```typescript
+// Required fields
+{ name: 'id', type: 'string' }
+{ name: 'title', type: 'string' }
+{ name: 'url', type: 'string' }
+{ name: 'slug', type: 'string' }
+{ name: 'html', type: 'string' }
+{ name: 'plaintext', type: 'string' }
+{ name: 'excerpt', type: 'string' }
+{ name: 'published_at', type: 'int64' }
+{ name: 'updated_at', type: 'int64' }
+
+// Optional fields
+{ name: 'feature_image', type: 'string', optional: true }
+{ name: 'tags', type: 'string[]', optional: true }
+{ name: 'authors', type: 'string[]', optional: true }
 ```
 
 ## Types
@@ -64,9 +95,40 @@ interface Config {
   };
   collection: {
     name: string;
+    fields?: CollectionField[];
   };
 }
+
+interface CollectionField {
+  name: string;         // Can use dot notation for nested fields (e.g., 'tags.name')
+  type: string;         // 'string', 'int32', 'int64', 'float', 'bool', or string arrays (e.g., 'string[]')
+  index?: boolean;      // Whether to index this field for searching
+  sort?: boolean;       // Whether this field can be used for sorting
+  facet?: boolean;      // Whether this field can be used for faceting
+  optional?: boolean;   // Whether this field is optional in documents
+}
 ```
+
+## Nested Fields
+
+The package supports nested fields using dot notation in the field name. This is particularly useful for accessing properties of complex objects like tags and authors:
+
+```typescript
+// Example with nested fields
+const config = {
+  collection: {
+    name: 'ghost',
+    fields: [
+      // Access nested properties
+      { name: 'tags.name', type: 'string', facet: true, optional: true },
+      { name: 'authors.bio', type: 'string', index: true, optional: true },
+      { name: 'authors.name', type: 'string', facet: true, optional: true }
+    ]
+  }
+};
+```
+
+When Typesense is configured with `enable_nested_fields: true`, you can efficiently search and facet on these nested properties.
 
 ## License
 
