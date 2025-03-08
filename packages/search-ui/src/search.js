@@ -415,6 +415,11 @@ import Typesense from 'typesense';
                     this.searchInput.value = searchQuery;
                     this.handleSearch(searchQuery);
                 }
+            } else if (isSearchHash && searchQuery && this.searchInput) {
+                // IMPORTANT FIX: Handle the case when hash changes but modal is already open
+                // This happens when user changes from one search term to another via hash
+                this.searchInput.value = searchQuery;
+                this.handleSearch(searchQuery);
             }
         }
         
@@ -798,84 +803,96 @@ import Typesense from 'typesense';
                     console.log('Displaying results for quoted search:', quotedPhrase);
                 }
                 
-                if (this.hitsList) {
-                    // Add a search info banner if this was a quoted search
-                    if (wasQuotedSearch && quotedPhrase && results.hits.length > 0) {
-                        const searchBannerEl = document.createElement('div');
-                        searchBannerEl.className = 'mp-search-banner';
-                        searchBannerEl.innerHTML = `
-                            <div class="mp-quote-search-info">
-                                <span class="mp-quote-icon">"</span>
-                                Showing exact matches for <strong>${quotedPhrase}</strong>
-                                <span class="mp-quote-icon">"</span>
-                            </div>
-                        `;
-                        
-                        // Insert banner at the top of results
-                        this.hitsList.innerHTML = '';
-                        this.hitsList.appendChild(searchBannerEl);
-                    } else {
-                        this.hitsList.innerHTML = '';
-                    }
+                // Get the hits container
+                const hitsContainer = this.doc.querySelector('#mp-hits');
+                if (!hitsContainer) return;
+                
+                // IMPORTANT FIX: Always clear the container before adding new results
+                // This fixes the issue where changing hash-based search terms would 
+                // append new results instead of replacing the old ones
+                hitsContainer.innerHTML = '';
+                
+                // Create a single hits list for the results
+                const hitsList = this.doc.createElement('div');
+                hitsList.className = 'mp-hits-list list-none';
+                hitsContainer.appendChild(hitsList);
+                
+                // Store reference to the new hits list
+                this.hitsList = hitsList;
+                
+                if (wasQuotedSearch && quotedPhrase && results.hits.length > 0) {
+                    const searchBannerEl = document.createElement('div');
+                    searchBannerEl.className = 'mp-search-banner';
+                    searchBannerEl.innerHTML = `
+                        <div class="mp-quote-search-info">
+                            <span class="mp-quote-icon">"</span>
+                            Showing exact matches for <strong>${quotedPhrase}</strong>
+                            <span class="mp-quote-icon">"</span>
+                        </div>
+                    `;
                     
-                    // Add the search results
-                    const resultsHtml = results.hits.map(hit => {
-                        // Always use plaintext as our primary text content source
-                        let textContent = hit.document.plaintext || '';
+                    // Insert banner at the top of results
+                    this.hitsList.appendChild(searchBannerEl);
+                }
+                
+                // Add the search results
+                const resultsHtml = results.hits.map(hit => {
+                    // Always use plaintext as our primary text content source
+                    let textContent = hit.document.plaintext || '';
 
-                        // If for some reason plaintext is empty, use excerpt as fallback
-                        if (!textContent) {
-                            textContent = hit.document.excerpt || '';
-                        }
+                    // If for some reason plaintext is empty, use excerpt as fallback
+                    if (!textContent) {
+                        textContent = hit.document.excerpt || '';
+                    }
 
-                        // Create a better excerpt that includes the search term context
-                        let excerpt = '';
-                        let query = this.searchInput?.value?.trim().toLowerCase() || '';
-                        
-                        // Handle quoted searches specially for highlighting
-                        // Use the already extracted quotedPhrase if this was a quoted search
-                        let exactPhrase = wasQuotedSearch ? quotedPhrase : null;
-                        
-                        // Double check if we should treat this as a quoted search based on query format
-                        if (!exactPhrase) {
-                            if ((query.startsWith('"') && query.endsWith('"')) || 
-                                (query.startsWith('%22') && query.endsWith('%22'))) {
-                                // Extract the exact phrase for highlighting as fallback
-                                exactPhrase = this.extractTextBetweenQuotes(query);
-                            } else if (query.includes('"') || query.includes('%22')) {
-                                // Handle case where quotes might be in the middle of the query
-                                exactPhrase = this.extractTextBetweenQuotes(query);
-                                if (!exactPhrase) {
-                                    // Try with the original query if the extraction failed
-                                    exactPhrase = this.extractTextBetweenQuotes(originalQuery);
-                                }
+                    // Create a better excerpt that includes the search term context
+                    let excerpt = '';
+                    let query = this.searchInput?.value?.trim().toLowerCase() || '';
+                    
+                    // Handle quoted searches specially for highlighting
+                    // Use the already extracted quotedPhrase if this was a quoted search
+                    let exactPhrase = wasQuotedSearch ? quotedPhrase : null;
+                    
+                    // Double check if we should treat this as a quoted search based on query format
+                    if (!exactPhrase) {
+                        if ((query.startsWith('"') && query.endsWith('"')) || 
+                            (query.startsWith('%22') && query.endsWith('%22'))) {
+                            // Extract the exact phrase for highlighting as fallback
+                            exactPhrase = this.extractTextBetweenQuotes(query);
+                        } else if (query.includes('"') || query.includes('%22')) {
+                            // Handle case where quotes might be in the middle of the query
+                            exactPhrase = this.extractTextBetweenQuotes(query);
+                            if (!exactPhrase) {
+                                // Try with the original query if the extraction failed
+                                exactPhrase = this.extractTextBetweenQuotes(originalQuery);
                             }
                         }
-                        
-                        if (exactPhrase) {
-                            // Force query to the exact phrase for highlighting
-                            query = exactPhrase.toLowerCase();
-                            console.log('Using exact phrase for highlighting:', exactPhrase);
-                        }
+                    }
+                    
+                    if (exactPhrase) {
+                        // Force query to the exact phrase for highlighting
+                        query = exactPhrase.toLowerCase();
+                        console.log('Using exact phrase for highlighting:', exactPhrase);
+                    }
 
-                        if (query && textContent.toLowerCase().includes(query)) {
-                            // Find the position of the query in the text
-                            const queryPosition = textContent.toLowerCase().indexOf(query);
-                            // Get a window of text around the query
-                            const startPos = Math.max(0, queryPosition - 60);
-                            const endPos = Math.min(textContent.length, queryPosition + query.length + 60);
-                            const rawExcerpt = textContent.substring(startPos, endPos);
+                    if (query && textContent.toLowerCase().includes(query)) {
+                        // Find the position of the query in the text
+                        const queryPosition = textContent.toLowerCase().indexOf(query);
+                        // Get a window of text around the query
+                        const startPos = Math.max(0, queryPosition - 60);
+                        const endPos = Math.min(textContent.length, queryPosition + query.length + 60);
+                        const rawExcerpt = textContent.substring(startPos, endPos);
 
-                            // Add highlighting to the query terms in the excerpt if enabled
-                            const words = query.split(/\s+/);
-                            let highlightedExcerpt = rawExcerpt;
+                        // Add highlighting to the query terms in the excerpt if enabled
+                        const words = query.split(/\s+/);
+                        let highlightedExcerpt = rawExcerpt;
 
-                            // Apply highlighting only if it's enabled in config
-                            if (this.config.enableHighlighting !== false) {
-                                // Sort words by length in descending order to handle longer phrases first
-                                words.sort((a, b) => b.length - a.length);
+                        // Apply highlighting only if it's enabled in config
+                        if (this.config.enableHighlighting !== false) {
+                            // Sort words by length in descending order to handle longer phrases first
+                            words.sort((a, b) => b.length - a.length);
 
-                                // For exact phrase searches, try to highlight the entire phrase first
+                            // For exact phrase searches, try to highlight the entire phrase first
                             if (exactPhrase && exactPhrase.length > 2) {
                                 try {
                                     // Escape special regex characters
@@ -916,87 +933,87 @@ import Typesense from 'typesense';
                                     console.warn('Error highlighting word:', word, e);
                                 }
                             }
-                            }
-
-                            excerpt = highlightedExcerpt;
-
-                            // Add ellipsis if we're not at the beginning or end
-                            if (startPos > 0) excerpt = '...' + excerpt;
-                            if (endPos < textContent.length) excerpt = excerpt + '...';
-                        } else {
-                            // Fallback to standard excerpt if query not found
-                            excerpt = textContent.trim().substring(0, 160).replace(/\s+[^\s]*$/, '...');
                         }
 
-                        // Get the original title
-                        let title = hit.document.title || 'Untitled';
+                        excerpt = highlightedExcerpt;
 
-                        // Highlight the title if it contains the search query and highlighting is enabled
-                        if (query && this.config.enableHighlighting !== false) {
-                            // For exact phrase searches, try to highlight the entire phrase first in the title
-                            if (exactPhrase && exactPhrase.length > 2) {
-                                try {
-                                    // Escape special regex characters
-                                    const escapedPhrase = exactPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                    
-                                    // Create a case-insensitive regex for the exact phrase
-                                    const phraseRegex = new RegExp(`(${escapedPhrase})`, 'gi');
-                                    
-                                    // Apply highlighting using the standard highlight class for consistency
-                                    title = title.replace(phraseRegex, '<mark class="mp-highlight">$1</mark>');
-                                    
-                                    // Log successful highlighting
-                                    console.log('Applied exact phrase highlighting in title for:', exactPhrase);
-                                } catch (e) {
-                                    console.warn('Error highlighting exact phrase in title:', e);
-                                }
+                        // Add ellipsis if we're not at the beginning or end
+                        if (startPos > 0) excerpt = '...' + excerpt;
+                        if (endPos < textContent.length) excerpt = excerpt + '...';
+                    } else {
+                        // Fallback to standard excerpt if query not found
+                        excerpt = textContent.trim().substring(0, 160).replace(/\s+[^\s]*$/, '...');
+                    }
+
+                    // Get the original title
+                    let title = hit.document.title || 'Untitled';
+
+                    // Highlight the title if it contains the search query and highlighting is enabled
+                    if (query && this.config.enableHighlighting !== false) {
+                        // For exact phrase searches, try to highlight the entire phrase first in the title
+                        if (exactPhrase && exactPhrase.length > 2) {
+                            try {
+                                // Escape special regex characters
+                                const escapedPhrase = exactPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                
+                                // Create a case-insensitive regex for the exact phrase
+                                const phraseRegex = new RegExp(`(${escapedPhrase})`, 'gi');
+                                
+                                // Apply highlighting using the standard highlight class for consistency
+                                title = title.replace(phraseRegex, '<mark class="mp-highlight">$1</mark>');
+                                
+                                // Log successful highlighting
+                                console.log('Applied exact phrase highlighting in title for:', exactPhrase);
+                            } catch (e) {
+                                console.warn('Error highlighting exact phrase in title:', e);
                             }
-                            
-                            const words = query.split(/\s+/);
+                        }
+                        
+                        const words = query.split(/\s+/);
 
-                            // Sort words by length in descending order to handle longer phrases first
-                            words.sort((a, b) => b.length - a.length);
+                        // Sort words by length in descending order to handle longer phrases first
+                        words.sort((a, b) => b.length - a.length);
 
-                            // Highlight each word in the title
-                            for (const word of words) {
-                                if (word.length < 2) continue; // Skip very short words
-                                try {
-                                    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                    const regex = new RegExp(`(${escapedWord})`, 'gi');
-                                    
-                                    // Don't re-highlight words that are already part of a highlighted exact phrase
-                                    title = title.replace(
-                                        regex, 
-                                        function(match) {
-                                            // Only highlight if not already inside a mark tag
-                                            if (/<mark[^>]*>[^<]*$/i.test(title.substring(0, title.indexOf(match))) &&
-                                                /^[^<]*<\/mark>/i.test(title.substring(title.indexOf(match) + match.length))) {
-                                                return match; // Already highlighted
-                                            }
-                                            return '<mark class="mp-highlight">'+match+'</mark>';
+                        // Highlight each word in the title
+                        for (const word of words) {
+                            if (word.length < 2) continue; // Skip very short words
+                            try {
+                                const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                const regex = new RegExp(`(${escapedWord})`, 'gi');
+                                
+                                // Don't re-highlight words that are already part of a highlighted exact phrase
+                                title = title.replace(
+                                    regex, 
+                                    function(match) {
+                                        // Only highlight if not already inside a mark tag
+                                        if (/<mark[^>]*>[^<]*$/i.test(title.substring(0, title.indexOf(match))) &&
+                                            /^[^<]*<\/mark>/i.test(title.substring(title.indexOf(match) + match.length))) {
+                                            return match; // Already highlighted
                                         }
-                                    );
-                                } catch (e) {
-                                    console.warn('Error highlighting word in title:', word, e);
-                                }
+                                        return '<mark class="mp-highlight">'+match+'</mark>';
+                                    }
+                                );
+                            } catch (e) {
+                                console.warn('Error highlighting word in title:', word, e);
                             }
                         }
+                    }
 
-                        return `
-                            <a href="${hit.document.url || '#'}" 
-                                class="mp-result-link"
-                                aria-label="${title.replace(/<[^>]*>/g, '')}">
-                                <article class="mp-result-item" role="article">
-                                    <h3 class="mp-result-title" role="heading" aria-level="3">${title}</h3>
-                                    <p class="mp-result-excerpt" aria-label="Article excerpt">${excerpt}</p>
-                                </article>
-                            </a>
-                        `;
-                    }).join('');
-                    // Insert the results HTML into the hitsList element
-                    this.hitsList.innerHTML = resultsHtml;
-                    this.hitsList.classList.remove('hidden');
-                }
+                    return `
+                        <a href="${hit.document.url || '#'}" 
+                            class="mp-result-link"
+                            aria-label="${title.replace(/<[^>]*>/g, '')}">
+                            <article class="mp-result-item" role="article">
+                                <h3 class="mp-result-title" role="heading" aria-level="3">${title}</h3>
+                                <p class="mp-result-excerpt" aria-label="Article excerpt">${excerpt}</p>
+                            </article>
+                        </a>
+                    `;
+                }).join('');
+                
+                // Insert the results HTML into the hitsList element
+                this.hitsList.innerHTML += resultsHtml;
+                this.hitsList.classList.remove('hidden');
             } catch (error) {
                 console.error('Search failed:', error);
                 if (loadingState) loadingState.classList.remove('active');
