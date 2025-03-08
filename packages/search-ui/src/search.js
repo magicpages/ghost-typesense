@@ -371,7 +371,8 @@ import Typesense from 'typesense';
             
             // If hash format is #/search/query
             if (hashParts.length > 2 && hashParts[1] === 'search') {
-                hashQuery = decodeURIComponent(hashParts[2]);
+                // Fix: Properly decode hash query to handle plus signs as spaces
+                hashQuery = decodeURIComponent(hashParts[2]).replace(/\+/g, ' ');
             }
             
             // Prioritize hash query over URL query
@@ -404,7 +405,10 @@ import Typesense from 'typesense';
             let searchQuery = null;
             
             if (hashParts.length > 2 && hashParts[1] === 'search') {
-                searchQuery = decodeURIComponent(hashParts[2]);
+                // Fix: Properly decode the query string to handle plus signs as spaces
+                // 1. Use decodeURIComponent to handle %20 encoding
+                // 2. Replace plus signs with spaces (not automatically handled in hash fragments)
+                searchQuery = decodeURIComponent(hashParts[2]).replace(/\+/g, ' ');
             }
             
             if (isSearchHash !== this.isModalOpen) {
@@ -416,7 +420,7 @@ import Typesense from 'typesense';
                     this.handleSearch(searchQuery);
                 }
             } else if (isSearchHash && searchQuery && this.searchInput) {
-                // IMPORTANT FIX: Handle the case when hash changes but modal is already open
+                // Handle the case when hash changes but modal is already open
                 // This happens when user changes from one search term to another via hash
                 this.searchInput.value = searchQuery;
                 this.handleSearch(searchQuery);
