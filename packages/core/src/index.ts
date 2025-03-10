@@ -6,6 +6,7 @@ export interface Post {
   id: string;
   title: string;
   slug: string;
+  url: string;
   html?: string;
   plaintext: string;
   excerpt: string;
@@ -15,6 +16,7 @@ export interface Post {
   'tags.name'?: string[];
   'tags.slug'?: string[];
   authors?: string[];
+  tags?: string[];
   [key: string]: unknown;
 }
 
@@ -121,6 +123,8 @@ export class GhostTypesenseManager {
       id: post.id,
       title: post.title,
       slug: post.slug,
+      url: post.url || `${this.config.ghost.url}/${post.slug}/`,
+      html: post.html || '',
       plaintext: plaintext,
       excerpt: post.excerpt || '',
       published_at: new Date(post.published_at || Date.now()).getTime(),
@@ -136,6 +140,9 @@ export class GhostTypesenseManager {
       // Use dot notation for nested tag fields
       transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
       transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
+      
+      // Add the standard tags field that Typesense expects as string[]
+      transformed.tags = tags.map((tag: { name: string }) => tag.name);
     }
 
     const authors = post.authors;
