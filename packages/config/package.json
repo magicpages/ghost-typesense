@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-config",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Configuration types and utilities for Ghost-Typesense integration",
   "author": "MagicPages",
   "license": "MIT",
