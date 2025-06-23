@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2025-01-23
+
+### Changed
+- **Major refactor**: Replaced iframe-based search UI with direct DOM injection approach
+  - Search modal now renders directly in the page DOM using portal pattern
+  - All CSS classes now use consistent `mp-search-` prefix to avoid conflicts
+  - Simplified event handling and scroll management
+  - Improved compatibility with complex Ghost themes
+
+### Fixed
+- Fixed scroll behavior on mobile WebKit browsers for themes using custom scrollbars (e.g., Principle theme with SimpleBar)
+- Fixed tiny text issue when search UI is used on sites with custom root font-size
+  - Replaced all `rem` units with `calc()` functions using a custom `--mp-rem` CSS variable
+  - Search UI now maintains consistent sizing regardless of the host page's root font-size
+  - This ensures proper text readability and UI scaling on all Ghost themes
+
 ## [1.6.2] - 2025-03-08
 
 ### Fixed
