@@ -174,10 +174,27 @@ export class GhostTypesenseManager {
       })
       .include({ tags: true, authors: true });
 
-    const response = await posts.fetch();
-
+    let response;
+    try {
+      response = await posts.fetch();
+    } catch (fetchError: any) {
+      // Network or connection error
+      if (fetchError.code === 'ECONNREFUSED') {
+        throw new Error(`Cannot connect to Ghost at ${this.config.ghost.url} - is Ghost running?`);
+      }
+      throw new Error(`Failed to connect to Ghost: ${fetchError.message || fetchError}`);
+    }
+    
     if (!response.success) {
-      throw new Error('Failed to fetch posts from Ghost');
+      // API response error (401, 404, etc)
+      const errors = response.errors || [];
+      const errorMessage = errors.map((e: any) => e.message || e).join(', ');
+      
+      if (errors.some((e: any) => e.code === 'UNKNOWN_CONTENT_API_KEY')) {
+        throw new Error(`Invalid Ghost API key: ${errorMessage}`);
+      }
+      
+      throw new Error(`Ghost API error: ${errorMessage || 'Unknown error'}`);
     }
 
     allPosts = allPosts.concat(response.data);

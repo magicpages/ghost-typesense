@@ -24,7 +24,8 @@ program
   .option('-v', 'Output the version number', () => {
     console.log(version);
     process.exit(0);
-  });
+  })
+  .option('-d, --debug', 'Enable debug mode');
 
 program
   .command('init')
@@ -53,18 +54,49 @@ program
   .description('Sync all Ghost posts to Typesense')
   .requiredOption('-c, --config <path>', 'Path to config file')
   .action(async (options) => {
+    const debug = program.opts().debug;
+    
     try {
-      const spinner = ora('Reading configuration...').start();
+      const spinner = debug ? null : ora('Reading configuration...').start();
       const configPath = resolve(process.cwd(), options.config);
       const configContent = readFileSync(configPath, 'utf-8');
+      
+      if (debug) {
+        console.log(chalk.blue('📄 Config path:'), configPath);
+        console.log(chalk.blue('📋 Config content:'), configContent);
+      }
+      
       const config = validateConfig(JSON.parse(configContent));
+      
+      if (debug) {
+        console.log(chalk.green('✅ Config validated successfully'));
+        console.log(chalk.blue('🔧 Ghost URL:'), config.ghost.url);
+        console.log(chalk.blue('🔑 Ghost API Key:'), config.ghost.key.substring(0, 10) + '...');
+        console.log(chalk.blue('🔍 Typesense nodes:'), JSON.stringify(config.typesense.nodes, null, 2));
+      }
 
-      spinner.text = 'Syncing posts to Typesense...';
+      if (spinner) spinner.text = 'Syncing posts to Typesense...';
       const manager = new GhostTypesenseManager(config);
+      
+      if (debug) {
+        console.log(chalk.yellow('📡 Fetching posts from Ghost...'));
+      }
+      
       await manager.indexAllPosts();
 
-      spinner.succeed('Posts synced successfully');
+      if (spinner) {
+        spinner.succeed('Posts synced successfully');
+      } else {
+        console.log(chalk.green('✅ Posts synced successfully'));
+      }
     } catch (error) {
+      if (debug) {
+        console.error(chalk.red('❌ Error details:'));
+        console.error(error);
+        if (error instanceof Error && error.stack) {
+          console.error(chalk.red('Stack trace:'), error.stack);
+        }
+      }
       ora().fail(chalk.red(`Failed to sync posts: ${(error as Error).message}`));
       process.exit(1);
     }
