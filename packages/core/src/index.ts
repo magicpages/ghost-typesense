@@ -151,9 +151,10 @@ export class GhostTypesenseManager {
     }
 
     // Add any additional fields specified in the config
+    // Only add fields that haven't already been transformed to avoid overriding custom transformations
     this.config.collection.fields.forEach((field) => {
       const value = post[field.name as keyof GhostPost];
-      if (!transformed[field.name] && value !== undefined && value !== null) {
+      if (!(field.name in transformed) && value !== undefined && value !== null) {
         transformed[field.name] = value;
       }
     });
