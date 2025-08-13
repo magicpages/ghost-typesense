@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-webhook",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Webhook handler for real-time Ghost content synchronization with Typesense",
   "author": "MagicPages",
   "license": "MIT",
@@ -18,8 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@magicpages/ghost-typesense-config": "^1.7.0",
-    "@magicpages/ghost-typesense-core": "^1.7.0",
+    "@magicpages/ghost-typesense-config": "^1.8.0",
+    "@magicpages/ghost-typesense-core": "^1.8.0",
     "@netlify/functions": "^2.5.1",
     "zod": "^3.22.4"
   },
