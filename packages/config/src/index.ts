@@ -84,6 +84,8 @@ export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
   { name: 'published_at', type: 'int64', sort: true, optional: false },
   { name: 'updated_at', type: 'int64', sort: true, optional: false },
   { name: 'tags', type: 'string[]', facet: true, optional: true },
+  { name: 'tags.name', type: 'string[]', index: true, facet: true, optional: true },
+  { name: 'tags.slug', type: 'string[]', index: true, facet: true, optional: true },
   { name: 'authors', type: 'string[]', facet: true, optional: true }
 ];
 
