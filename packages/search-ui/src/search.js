@@ -454,6 +454,7 @@ import Typesense from 'typesense';
                     .documents()
                     .search(searchParameters);
 
+
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
 
                 if (results.hits.length === 0) {
@@ -473,8 +474,8 @@ import Typesense from 'typesense';
                 const resultsHtml = results.hits.map(hit => {
                     // Use highlighted content when available, otherwise fall back to original
                     const getHighlightedField = (fieldName, fallback) => {
-                        if (this.config.enableHighlighting && hit.highlights && hit.highlights[fieldName]) {
-                            return hit.highlights[fieldName].value || hit.highlights[fieldName].snippet || fallback;
+                        if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
+                            return hit.highlight[fieldName].value || hit.highlight[fieldName].snippet || fallback;
                         }
                         return fallback;
                     };
