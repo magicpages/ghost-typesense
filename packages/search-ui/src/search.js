@@ -471,13 +471,24 @@ import Typesense from 'typesense';
                 this.hitsList.innerHTML = '';
                 
                 const resultsHtml = results.hits.map(hit => {
-                    const title = hit.document.title || 'Untitled';
-                    const excerpt = hit.document.excerpt || hit.document.plaintext?.substring(0, 160) || '';
+                    // Use highlighted content when available, otherwise fall back to original
+                    const getHighlightedField = (fieldName, fallback) => {
+                        if (this.config.enableHighlighting && hit.highlights && hit.highlights[fieldName]) {
+                            return hit.highlights[fieldName].value || hit.highlights[fieldName].snippet || fallback;
+                        }
+                        return fallback;
+                    };
+
+                    const title = getHighlightedField('title', hit.document.title) || 'Untitled';
+                    const excerpt = getHighlightedField('excerpt', hit.document.excerpt) || 
+                                  getHighlightedField('plaintext', hit.document.plaintext?.substring(0, 160)) || 
+                                  hit.document.excerpt || 
+                                  hit.document.plaintext?.substring(0, 160) || '';
                     
                     return `
                         <a href="${hit.document.url || '#'}" 
                             class="${CSS_PREFIX}-result-link"
-                            aria-label="${title}">
+                            aria-label="${title.replace(/<[^>]*>/g, '')}">
                             <article class="${CSS_PREFIX}-result-item" role="article">
                                 <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
                                 <p class="${CSS_PREFIX}-result-excerpt" aria-label="Article excerpt">${excerpt}</p>

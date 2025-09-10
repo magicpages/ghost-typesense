@@ -489,8 +489,19 @@
 }
 
 /* Highlight styles */
-.mp-search-highlight {
+.mp-search-highlight,
+.mp-search mark {
     background: none;
+    background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+    color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
+    font-weight: 600;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+/* Specific styles for mark tags in search results */
+.mp-search-result-title mark,
+.mp-search-result-excerpt mark {
     background: color-mix(in srgb, var(--accent-color) 15%, transparent);
     color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
     font-weight: 600;
