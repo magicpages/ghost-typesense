@@ -38,9 +38,9 @@ export class GhostTypesenseManager {
     this.typesense = new Client({
       nodes: config.typesense.nodes,
       apiKey: config.typesense.apiKey,
-      connectionTimeoutSeconds: config.typesense.connectionTimeoutSeconds,
-      retryIntervalSeconds: config.typesense.retryIntervalSeconds,
-      numRetries: 3
+      connectionTimeoutSeconds: config.typesense.connectionTimeoutSeconds || 3600, // 60 minutes for bulk operations
+      retryIntervalSeconds: config.typesense.retryIntervalSeconds || 2,
+      numRetries: 5
     });
   }
 
@@ -225,29 +225,203 @@ export class GhostTypesenseManager {
     console.log(`Found ${allPosts.length} posts to index`);
     const documents = allPosts.map((post) => this.transformPost(post));
 
-    try {
-      const collection = this.typesense.collections(this.collectionName);
+    // Use batched bulk import for better performance and reliability
+    await this.indexDocumentsBatched(documents);
+  }
 
-      // Use upsert for each document instead of bulk import
-      const results = await Promise.all(
-        documents.map(doc =>
-          collection.documents().upsert(doc)
-            .then(() => ({ success: true, id: doc.id }))
-            .catch(error => ({ success: false, id: doc.id, error: error.message }))
-        )
-      );
-
-      const succeeded = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-
-      console.log(`Indexing complete: ${succeeded} succeeded, ${failed} failed`);
-      if (failed > 0) {
-        console.log('Failed documents:', results.filter(r => !r.success));
-      }
-    } catch (error) {
-      console.error('Indexing error:', error);
-      throw error;
+  /**
+   * Index documents in batches with retry logic and backpressure handling
+   * @private
+   */
+  private async indexDocumentsBatched(documents: Post[]): Promise<void> {
+    const batchSize = this.config.typesense.batchSize || 200;
+    const maxConcurrentBatches = this.config.typesense.maxConcurrentBatches || 12;
+    
+    // Split documents into batches
+    const batches: Post[][] = [];
+    for (let i = 0; i < documents.length; i += batchSize) {
+      batches.push(documents.slice(i, i + batchSize));
     }
+    
+    console.log(`Processing ${documents.length} documents in ${batches.length} batches (batch size: ${batchSize})`);
+    const collection = this.typesense.collections(this.collectionName);
+    let totalSucceeded = 0;
+    let totalFailed = 0;
+    const failedBatches: Array<{ batchIndex: number; documents: Post[]; error: string }> = [];
+    
+    // Process batches with controlled concurrency
+    for (let i = 0; i < batches.length; i += maxConcurrentBatches) {
+      const batchGroup = batches.slice(i, i + maxConcurrentBatches);
+      const batchPromises = batchGroup.map(async (batch, batchIndex) => {
+        const actualBatchIndex = i + batchIndex;
+        return this.processBatchWithRetry(collection, batch, actualBatchIndex, batches.length);
+      });
+      
+      const results = await Promise.allSettled(batchPromises);
+      
+      results.forEach((result, batchIndex) => {
+        const actualBatchIndex = i + batchIndex;
+        if (result.status === 'fulfilled') {
+          totalSucceeded += result.value.succeeded;
+          totalFailed += result.value.failed;
+          if (result.value.error) {
+            failedBatches.push({
+              batchIndex: actualBatchIndex,
+              documents: batchGroup[batchIndex]!,
+              error: result.value.error
+            });
+          }
+        } else {
+          const batchSize = batchGroup[batchIndex]!.length;
+          totalFailed += batchSize;
+          failedBatches.push({
+            batchIndex: actualBatchIndex,
+            documents: batchGroup[batchIndex]!,
+            error: result.reason?.message || 'Unknown batch error'
+          });
+        }
+      });
+      
+      console.log(`Progress: ${Math.min(i + maxConcurrentBatches, batches.length)}/${batches.length} batch groups processed`);
+    }
+    
+    console.log(`Indexing complete: ${totalSucceeded} succeeded, ${totalFailed} failed`);
+    
+    // Retry failed batches once with smaller batch sizes
+    if (failedBatches.length > 0) {
+      console.log(`Retrying ${failedBatches.length} failed batches with smaller batch size...`);
+      const retryResults = await this.retryFailedBatches(collection, failedBatches);
+      totalSucceeded += retryResults.succeeded;
+      totalFailed = totalFailed - retryResults.retryAttempted + retryResults.failed;
+      
+      console.log(`Final result: ${totalSucceeded} succeeded, ${totalFailed} failed`);
+    }
+    
+    if (totalFailed > 0) {
+      console.log(`⚠️  ${totalFailed} documents failed to index. Consider running sync again or checking server capacity.`);
+    }
+  }
+  
+  /**
+   * Process a single batch with retry logic and backpressure handling
+   * @private
+   */
+  private async processBatchWithRetry(
+    collection: any, 
+    documents: Post[], 
+    batchIndex: number, 
+    totalBatches: number
+  ): Promise<{ succeeded: number; failed: number; error?: string }> {
+    const maxRetries = 3;
+    let lastError: string = '';
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (${documents.length} docs) - attempt ${attempt}`);
+        
+        const result = await collection.documents().import(documents, {
+          action: 'upsert',
+          batch_size: documents.length,
+          return_doc: false,
+          return_id: false
+        });
+        
+        // Parse bulk import result
+        const succeeded = result.filter((r: any) => r.success === true).length;
+        const failed = documents.length - succeeded;
+        
+        if (failed > 0) {
+          console.log(`Batch ${batchIndex + 1}: ${succeeded} succeeded, ${failed} failed`);
+        }
+        
+        return { succeeded, failed };
+        
+      } catch (error: any) {
+        lastError = error.message || error;
+        
+        // Handle HTTP 503 (server overload) with exponential backoff
+        if (error.httpStatus === 503 || lastError.includes('503') || lastError.includes('Not Ready')) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, attempt), 10000); // Max 10s
+          console.log(`Batch ${batchIndex + 1}: Server overload (503), retrying in ${backoffDelay}ms...`);
+          await this.sleep(backoffDelay);
+          continue;
+        }
+        
+        // Handle timeout errors
+        if (lastError.includes('timeout') || lastError.includes('ECONNABORTED')) {
+          const backoffDelay = Math.min(2000 * attempt, 8000); // Max 8s for timeouts
+          console.log(`Batch ${batchIndex + 1}: Timeout error, retrying in ${backoffDelay}ms...`);
+          await this.sleep(backoffDelay);
+          continue;
+        }
+        
+        // For other errors, retry with shorter delay
+        if (attempt < maxRetries) {
+          const backoffDelay = 1000 * attempt;
+          console.log(`Batch ${batchIndex + 1}: Error (${lastError}), retrying in ${backoffDelay}ms...`);
+          await this.sleep(backoffDelay);
+          continue;
+        }
+      }
+    }
+    
+    console.error(`Batch ${batchIndex + 1} failed after ${maxRetries} attempts: ${lastError}`);
+    return { succeeded: 0, failed: documents.length, error: lastError };
+  }
+  
+  /**
+   * Retry failed batches with smaller batch sizes
+   * @private
+   */
+  private async retryFailedBatches(
+    collection: any,
+    failedBatches: Array<{ batchIndex: number; documents: Post[]; error: string }>
+  ): Promise<{ succeeded: number; failed: number; retryAttempted: number }> {
+    let succeeded = 0;
+    let failed = 0;
+    let retryAttempted = 0;
+    
+    for (const failedBatch of failedBatches) {
+      retryAttempted += failedBatch.documents.length;
+      
+      // Retry with smaller batches (50 docs each)
+      const smallBatches: Post[][] = [];
+      for (let i = 0; i < failedBatch.documents.length; i += 50) {
+        smallBatches.push(failedBatch.documents.slice(i, i + 50));
+      }
+      
+      for (const smallBatch of smallBatches) {
+        try {
+          const result = await collection.documents().import(smallBatch, {
+            action: 'upsert',
+            batch_size: smallBatch.length,
+            return_doc: false,
+            return_id: false
+          });
+          
+          const batchSucceeded = result.filter((r: any) => r.success === true).length;
+          succeeded += batchSucceeded;
+          failed += smallBatch.length - batchSucceeded;
+          
+        } catch (error: any) {
+          console.error(`Small batch retry failed: ${error.message || error}`);
+          failed += smallBatch.length;
+        }
+        
+        // Small delay between retry batches
+        await this.sleep(500);
+      }
+    }
+    
+    return { succeeded, failed, retryAttempted };
+  }
+  
+  /**
+   * Sleep utility for backoff delays
+   * @private
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
