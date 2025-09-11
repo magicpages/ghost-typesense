@@ -36,7 +36,9 @@ export const TypesenseConfigSchema = z.object({
   nodes: z.array(TypesenseNodeSchema).min(1),
   apiKey: z.string().min(1),
   connectionTimeoutSeconds: z.number().optional(),
-  retryIntervalSeconds: z.number().optional()
+  retryIntervalSeconds: z.number().optional(),
+  batchSize: z.number().optional(),
+  maxConcurrentBatches: z.number().optional()
 });
 
 /**
