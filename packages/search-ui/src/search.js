@@ -223,7 +223,7 @@ import Typesense from 'typesense';
         }
 
         updateTheme() {
-            const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDarkMode = this.config.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches;
             this.modal.classList.toggle(`${CSS_PREFIX}-dark`, isDarkMode);
         }
 
