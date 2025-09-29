@@ -223,7 +223,8 @@ import Typesense from 'typesense';
         }
 
         updateTheme() {
-            const isDarkMode = this.config.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDarkMode = this.config.theme === 'light' ? false : (this.config.theme === 'dark' || preferDark);
             this.modal.classList.toggle(`${CSS_PREFIX}-dark`, isDarkMode);
         }
 
