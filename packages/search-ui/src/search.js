@@ -504,18 +504,31 @@ import Typesense from 'typesense';
 
                 const resultsHtml = results.hits.map(hit => {
                     // Use highlighted content when available, otherwise fall back to original
-                    const getHighlightedField = (fieldName, fallback) => {
+                    const getHighlightedTitle = (fieldName, fallback) => {
                         if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
-                            return hit.highlight[fieldName].value || hit.highlight[fieldName].snippet || fallback;
+                            return hit.highlight[fieldName].snippet || hit.highlight[fieldName].value || fallback;
                         }
                         return fallback;
                     };
 
-                    const title = getHighlightedField('title', hit.document.title) || this.t('untitledPost');
-                    const excerpt = getHighlightedField('excerpt', hit.document.excerpt) ||
-                                  getHighlightedField('plaintext', hit.document.plaintext?.substring(0, 160)) ||
+                    const getHighlightedExcerpt = (fieldName, fallback) => {
+                        if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
+                            // For excerpts, prefer snippet (shorter) and truncate if needed
+                            const highlighted = hit.highlight[fieldName].snippet || hit.highlight[fieldName].value || fallback;
+                            // Truncate to ~160 characters if too long (accounting for HTML tags)
+                            if (highlighted && highlighted.length > 200) {
+                                return highlighted.substring(0, 200) + '...';
+                            }
+                            return highlighted;
+                        }
+                        return fallback;
+                    };
+
+                    const title = getHighlightedTitle('title', hit.document.title) || this.t('untitledPost');
+                    const excerpt = getHighlightedExcerpt('excerpt', hit.document.excerpt) ||
+                                  getHighlightedExcerpt('plaintext', hit.document.plaintext?.substring(0, 80)) ||
                                   hit.document.excerpt ||
-                                  hit.document.plaintext?.substring(0, 160) || '';
+                                  hit.document.plaintext?.substring(0, 80) || '';
 
                     return `
                         <a href="${hit.document.url || '#'}"
