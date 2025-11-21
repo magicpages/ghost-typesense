@@ -10,7 +10,6 @@ import { visualizer } from 'rollup-plugin-visualizer';
 const css = fs.readFileSync(path.resolve('src/styles.css'), 'utf8');
 
 export default {
-  inlineDynamicImports: true,
   treeshake: {
     preset: 'recommended',
     moduleSideEffects: true,
@@ -21,6 +20,7 @@ export default {
     file: 'dist/search.min.js',
     format: 'iife',
     name: 'MagicPagesSearch',
+    inlineDynamicImports: true,
     generatedCode: {
       preset: 'es2015',
       constBindings: true

@@ -49,29 +49,47 @@ import Typesense from 'typesense';
         }, 5000);
     }
 
-    // CSS class prefix to avoid conflicts
+    // CSS class prefix to avoid conflicts (kept for consistency)
     const CSS_PREFIX = 'mp-search';
 
-    // Inject styles directly into the page
-    function injectStyles() {
-        if (document.getElementById('mp-search-styles')) return;
+    // Web Component Definition
+    class MagicPagesSearchElement extends HTMLElement {
+        constructor() {
+            super();
 
-        const style = document.createElement('style');
-        style.id = 'mp-search-styles';
-        style.textContent = BUNDLED_CSS;
-        document.head.appendChild(style);
-    }
-
-    class MagicPagesSearch {
-        constructor(config = {}) {
-            if (isInitialized) {
-                console.warn('MagicPagesSearch is already initialized');
-                return window.magicPagesSearch;
-            }
+            // Attach shadow DOM for style encapsulation
+            this.attachShadow({ mode: 'open' });
 
             this.isModalOpen = false;
             this.activeElement = null;
             this.scrollPosition = 0;
+            this.selectedIndex = -1;
+            this.searchDebounceTimeout = null;
+            this.cachedElements = {};
+            this.typesenseClient = null;
+
+            // Default English translations
+            this.defaultI18n = {
+                searchPlaceholder: 'Search for anything',
+                commonSearchesTitle: 'Common searches',
+                emptyStateMessage: 'Start typing to search...',
+                loadingMessage: 'Searching...',
+                noResultsMessage: 'No results found for your search',
+                navigateHint: 'to navigate',
+                closeHint: 'to close',
+                ariaSearchLabel: 'Search',
+                ariaCloseLabel: 'Close search',
+                ariaResultsLabel: 'Search results',
+                ariaArticleExcerpt: 'Article excerpt',
+                ariaModalLabel: 'Search',
+                untitledPost: 'Untitled'
+            };
+        }
+
+        connectedCallback() {
+            if (isInitialized) {
+                return;
+            }
 
             const defaultConfig = window.__MP_SEARCH_CONFIG__ || {
                 typesenseNodes: [{
@@ -96,80 +114,93 @@ import Typesense from 'typesense';
 
             this.config = {
                 ...defaultConfig,
-                ...config,
-                commonSearches: config.commonSearches || defaultConfig.commonSearches || []
+                commonSearches: defaultConfig.commonSearches || []
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
                 throw new Error('MagicPagesSearch: Missing required Typesense configuration');
             }
 
-            this.selectedIndex = -1;
-            this.searchDebounceTimeout = null;
-            this.cachedElements = {};
+            // Merge i18n with defaults (supports partial overrides)
+            this.i18n = {
+                ...this.defaultI18n,
+                ...(this.config.i18n || {})
+            };
+
+            // Store locale for future use
+            this.locale = this.config.locale || 'en';
 
             this.init();
             isInitialized = true;
         }
 
+        // Translation helper method
+        t(key) {
+            return this.i18n[key] || this.defaultI18n[key] || key;
+        }
+
         async init() {
-            injectStyles();
-            await this.createSearchModal();
+            this.createShadowContent();
+            this.cacheElements();
+            this.updateTheme();
             this.initEventListeners();
             this.setupHashHandling();
             await this.handleInitialState();
         }
 
-        async createSearchModal() {
-            // Check if modal already exists
-            if (document.getElementById(`${CSS_PREFIX}-modal`)) return;
+        createShadowContent() {
+            // Create styles
+            const styles = document.createElement('style');
+            // eslint-disable-next-line no-undef
+            styles.textContent = BUNDLED_CSS;
 
-            // Create modal container using portal pattern
-            const modalHtml = `
-                <div id="${CSS_PREFIX}-modal" class="${CSS_PREFIX}-modal ${CSS_PREFIX}-hidden" role="dialog" aria-modal="true" aria-label="Search">
+            // Create modal HTML
+            const modalContainer = document.createElement('div');
+            modalContainer.innerHTML = `
+                <div id="${CSS_PREFIX}-modal" class="${CSS_PREFIX}-modal ${CSS_PREFIX}-hidden" role="dialog" aria-modal="true" aria-label="${this.t('ariaModalLabel')}">
                     <div class="${CSS_PREFIX}-backdrop"></div>
                     <div class="${CSS_PREFIX}-container">
-                        <button class="${CSS_PREFIX}-close" aria-label="Close search">
+                        <button class="${CSS_PREFIX}-close" aria-label="${this.t('ariaCloseLabel')}">
                             <span aria-hidden="true">×</span>
                         </button>
                         <div class="${CSS_PREFIX}-content">
                             <div class="${CSS_PREFIX}-header">
                                 <div id="${CSS_PREFIX}-searchbox" role="search">
                                     <form class="${CSS_PREFIX}-form" role="search">
-                                        <input 
-                                            type="search" 
-                                            class="${CSS_PREFIX}-input" 
-                                            placeholder="Search for anything"
+                                        <input
+                                            type="search"
+                                            class="${CSS_PREFIX}-input"
+                                            placeholder="${this.t('searchPlaceholder')}"
                                             autocomplete="off"
                                             autocorrect="off"
                                             autocapitalize="off"
                                             spellcheck="false"
                                             maxlength="512"
-                                            aria-label="Search"
+                                            aria-label="${this.t('ariaSearchLabel')}"
                                         />
                                     </form>
                                 </div>
                                 <div class="${CSS_PREFIX}-hints">
                                     <span>
                                         <kbd class="${CSS_PREFIX}-kbd">↑↓</kbd>
-                                        to navigate
+                                        ${this.t('navigateHint')}
                                     </span>
                                     <span>
                                         <kbd class="${CSS_PREFIX}-kbd">esc</kbd>
-                                        to close
+                                        ${this.t('closeHint')}
                                     </span>
                                 </div>
                             </div>
                             <div class="${CSS_PREFIX}-results-container">
                                 ${this.getCommonSearchesHtml()}
-                                <div id="${CSS_PREFIX}-hits" class="${CSS_PREFIX}-hits-list" role="region" aria-label="Search results"></div>
+                                <div id="${CSS_PREFIX}-hits" class="${CSS_PREFIX}-hits-list" role="region" aria-label="${this.t('ariaResultsLabel')}"></div>
                                 <div id="${CSS_PREFIX}-loading" class="${CSS_PREFIX}-loading ${CSS_PREFIX}-hidden" role="status" aria-live="polite">
                                     <div class="${CSS_PREFIX}-spinner" aria-hidden="true"></div>
-                                    <div>Searching...</div>
+                                    <div>${this.t('loadingMessage')}</div>
                                 </div>
                                 <div id="${CSS_PREFIX}-empty" class="${CSS_PREFIX}-empty ${CSS_PREFIX}-hidden" role="status" aria-live="polite">
                                     <div class="${CSS_PREFIX}-empty-message">
-                                        <p>No results found for your search</p>
+                                        <p>${this.t('noResultsMessage')}</p>
                                     </div>
                                 </div>
                             </div>
@@ -178,27 +209,26 @@ import Typesense from 'typesense';
                 </div>
             `;
 
-            // Append to body
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            // Append to shadow DOM
+            this.shadowRoot.appendChild(styles);
+            this.shadowRoot.appendChild(modalContainer.firstElementChild);
+        }
 
-            // Cache elements
-            this.modal = document.getElementById(`${CSS_PREFIX}-modal`);
-            this.searchInput = this.modal.querySelector(`.${CSS_PREFIX}-input`);
-            this.searchForm = this.modal.querySelector(`.${CSS_PREFIX}-form`);
-            this.hitsList = this.modal.querySelector(`#${CSS_PREFIX}-hits`);
-            this.commonSearches = this.modal.querySelector(`.${CSS_PREFIX}-common-searches`);
-            this.loadingState = this.modal.querySelector(`#${CSS_PREFIX}-loading`);
-            this.emptyState = this.modal.querySelector(`#${CSS_PREFIX}-empty`);
-
-            // Handle dark mode
-            this.updateTheme();
+        cacheElements() {
+            this.modal = this.shadowRoot.getElementById(`${CSS_PREFIX}-modal`);
+            this.searchInput = this.shadowRoot.querySelector(`.${CSS_PREFIX}-input`);
+            this.searchForm = this.shadowRoot.querySelector(`.${CSS_PREFIX}-form`);
+            this.hitsList = this.shadowRoot.querySelector(`#${CSS_PREFIX}-hits`);
+            this.commonSearches = this.shadowRoot.querySelector(`.${CSS_PREFIX}-common-searches`);
+            this.loadingState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-loading`);
+            this.emptyState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-empty`);
         }
 
         getCommonSearchesHtml() {
             if (!this.config.commonSearches?.length) {
                 return `
                     <div class="${CSS_PREFIX}-common-searches">
-                        <div class="${CSS_PREFIX}-empty-message">Start typing to search...</div>
+                        <div class="${CSS_PREFIX}-empty-message">${this.t('emptyStateMessage')}</div>
                     </div>
                 `;
             }
@@ -206,12 +236,12 @@ import Typesense from 'typesense';
             return `
                 <div class="${CSS_PREFIX}-common-searches">
                     <div class="${CSS_PREFIX}-common-searches-title" role="heading" aria-level="2">
-                        Common searches
+                        ${this.t('commonSearchesTitle')}
                     </div>
                     <div id="${CSS_PREFIX}-common-searches-container" role="list">
                         ${this.config.commonSearches.map(search => `
-                            <button type="button" 
-                                class="${CSS_PREFIX}-common-search-btn" 
+                            <button type="button"
+                                class="${CSS_PREFIX}-common-search-btn"
                                 data-search="${search}"
                                 role="listitem">
                                 ${search}
@@ -230,7 +260,7 @@ import Typesense from 'typesense';
 
         initEventListeners() {
             // Close button
-            const closeButton = this.modal.querySelector(`.${CSS_PREFIX}-close`);
+            const closeButton = this.shadowRoot.querySelector(`.${CSS_PREFIX}-close`);
             closeButton.addEventListener('click', () => this.closeModal());
 
             // Click outside to close
@@ -241,7 +271,7 @@ import Typesense from 'typesense';
             });
 
             // Prevent clicks on modal content from closing
-            const modalContent = this.modal.querySelector(`.${CSS_PREFIX}-container`);
+            const modalContent = this.shadowRoot.querySelector(`.${CSS_PREFIX}-container`);
             modalContent.addEventListener('click', (e) => e.stopPropagation());
 
             // Search form submission
@@ -267,21 +297,21 @@ import Typesense from 'typesense';
             // Common searches
             this.attachCommonSearchListeners();
 
-            // Keyboard shortcuts
+            // Keyboard shortcuts (attached to document, outside shadow DOM)
             document.addEventListener('keydown', (e) => {
                 // Cmd/Ctrl + K to open
                 if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
                     e.preventDefault();
                     this.openModal();
                 }
-                
+
                 // / to open (when not in input)
                 if (e.key === '/' && !e.ctrlKey && !e.metaKey &&
                     e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                     e.preventDefault();
                     this.openModal();
                 }
-                
+
                 // Escape to close
                 if (e.key === 'Escape' && this.isModalOpen) {
                     e.preventDefault();
@@ -292,7 +322,7 @@ import Typesense from 'typesense';
             // Handle keyboard navigation in modal
             this.modal.addEventListener('keydown', (e) => this.handleKeydown(e));
 
-            // Handle Ghost's search buttons
+            // Handle Ghost's search buttons (outside shadow DOM)
             document.querySelectorAll('[data-ghost-search]').forEach(button => {
                 button.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -308,7 +338,7 @@ import Typesense from 'typesense';
         }
 
         attachCommonSearchListeners() {
-            const container = this.modal.querySelector(`#${CSS_PREFIX}-common-searches-container`);
+            const container = this.shadowRoot.querySelector(`#${CSS_PREFIX}-common-searches-container`);
             if (!container) return;
 
             const handleClick = (e) => {
@@ -336,7 +366,7 @@ import Typesense from 'typesense';
         lockBodyScroll() {
             // Store current scroll position
             this.scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
-            
+
             // Apply body lock styles
             document.body.style.overflow = 'hidden';
             document.body.style.position = 'fixed';
@@ -350,7 +380,7 @@ import Typesense from 'typesense';
             document.body.style.removeProperty('position');
             document.body.style.removeProperty('top');
             document.body.style.removeProperty('width');
-            
+
             // Restore scroll position
             window.scrollTo(0, this.scrollPosition);
         }
@@ -381,7 +411,7 @@ import Typesense from 'typesense';
             // Check for search query parameters
             const searchParams = new URLSearchParams(window.location.search);
             const searchQuery = searchParams.get('s') || searchParams.get('q');
-            
+
             if (searchQuery && this.searchInput) {
                 this.searchInput.value = searchQuery;
                 this.handleSearch(searchQuery);
@@ -466,12 +496,12 @@ import Typesense from 'typesense';
                     }
                     return;
                 }
-                
+
                 if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
-                
+
                 // Clear and populate results
                 this.hitsList.innerHTML = '';
-                
+
                 const resultsHtml = results.hits.map(hit => {
                     // Use highlighted content when available, otherwise fall back to original
                     const getHighlightedField = (fieldName, fallback) => {
@@ -481,28 +511,27 @@ import Typesense from 'typesense';
                         return fallback;
                     };
 
-                    const title = getHighlightedField('title', hit.document.title) || 'Untitled';
-                    const excerpt = getHighlightedField('excerpt', hit.document.excerpt) || 
-                                  getHighlightedField('plaintext', hit.document.plaintext?.substring(0, 160)) || 
-                                  hit.document.excerpt || 
+                    const title = getHighlightedField('title', hit.document.title) || this.t('untitledPost');
+                    const excerpt = getHighlightedField('excerpt', hit.document.excerpt) ||
+                                  getHighlightedField('plaintext', hit.document.plaintext?.substring(0, 160)) ||
+                                  hit.document.excerpt ||
                                   hit.document.plaintext?.substring(0, 160) || '';
-                    
+
                     return `
-                        <a href="${hit.document.url || '#'}" 
+                        <a href="${hit.document.url || '#'}"
                             class="${CSS_PREFIX}-result-link"
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             <article class="${CSS_PREFIX}-result-item" role="article">
                                 <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
-                                <p class="${CSS_PREFIX}-result-excerpt" aria-label="Article excerpt">${excerpt}</p>
+                                <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                             </article>
                         </a>
                     `;
                 }).join('');
-                
+
                 this.hitsList.innerHTML = resultsHtml;
                 this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             } catch (error) {
-                console.error('Search failed:', error);
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.emptyState) this.emptyState.classList.remove(`${CSS_PREFIX}-hidden`);
                 if (this.hitsList) {
@@ -580,7 +609,7 @@ import Typesense from 'typesense';
         }
 
         navigateResults(direction) {
-            const results = [...this.modal.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
+            const results = [...this.shadowRoot.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
                 el => el.offsetParent !== null && !el.closest(`.${CSS_PREFIX}-hidden`)
             );
 
@@ -601,7 +630,7 @@ import Typesense from 'typesense';
         }
 
         handleEnterKey() {
-            const results = [...this.modal.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
+            const results = [...this.shadowRoot.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
                 el => el.offsetParent !== null && !el.closest(`.${CSS_PREFIX}-hidden`)
             );
 
@@ -622,7 +651,7 @@ import Typesense from 'typesense';
 
         async syncWithHash() {
             const isSearchHash = window.location.hash.startsWith('#/search');
-            
+
             if (isSearchHash !== this.isModalOpen) {
                 if (isSearchHash) {
                     await this.openModal();
@@ -636,15 +665,15 @@ import Typesense from 'typesense';
             // Check for search query parameters in the URL
             const searchParams = new URLSearchParams(window.location.search);
             const searchQuery = searchParams.get('s') || searchParams.get('q');
-            
+
             // Check for search terms in the hash path
             const hashParts = window.location.hash.split('/');
             let hashQuery = null;
-            
+
             if (hashParts.length > 2 && hashParts[1] === 'search') {
                 hashQuery = decodeURIComponent(hashParts[2]).replace(/\+/g, ' ');
             }
-            
+
             // Prioritize hash query over URL query
             if (hashQuery) {
                 await this.openModal();
@@ -664,22 +693,33 @@ import Typesense from 'typesense';
         }
     }
 
-    // Export to window
-    window.MagicPagesSearch = MagicPagesSearch;
+    // Define custom element
+    if (!customElements.get('magicpages-search')) {
+        customElements.define('magicpages-search', MagicPagesSearchElement);
+    }
+
+    // Export to window for backwards compatibility
+    window.MagicPagesSearch = MagicPagesSearchElement;
 
     // Auto-initialize function
     function initializeSearch() {
         // Check for search query parameters
         const searchParams = new URLSearchParams(window.location.search);
         const hasSearchParam = searchParams.has('s') || searchParams.has('q');
-        
+
         if (!window.magicPagesSearch && (
             window.__MP_SEARCH_CONFIG__ ||
             window.location.hash === '#/search' ||
             hasSearchParam ||
             document.querySelectorAll('[data-ghost-search]').length > 0
         )) {
-            window.magicPagesSearch = new MagicPagesSearch();
+            // Create and append the web component
+            const searchElement = document.createElement('magicpages-search');
+            document.body.appendChild(searchElement);
+
+            // Store reference for backwards compatibility
+            window.magicPagesSearch = searchElement;
+
             // Only after successful initialization, start cleaning up Ghost's search
             setupCleanup();
         }
@@ -709,4 +749,4 @@ import Typesense from 'typesense';
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeSearch);
     }
-})(); 
+})();

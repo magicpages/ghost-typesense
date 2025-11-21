@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2025-11-21
+
+### Added
+- **Web Component Architecture**: Converted search UI to a custom element (`<magicpages-search>`) with Shadow DOM
+  - Complete style encapsulation prevents Ghost theme CSS from interfering with search UI
+  - Search UI styles no longer leak into the page
+  - Consistent appearance across all Ghost themes
+  - Improved performance through scoped styles
+- **Internationalization (i18n) Support**: Full translation support for all UI elements
+  - 13 translatable strings covering all UI text and ARIA labels
+  - Support for partial overrides (users only translate what they need)
+  - Automatic fallback to English for missing translations
+  - Lightweight implementation with no external dependencies
+  - Optional `locale` property for future features
+  - Example translations provided for German, Spanish, and French in documentation
+
+### Changed
+- Search UI now renders inside Shadow DOM instead of direct DOM injection
+- All styles now scoped to Shadow DOM instead of global page styles
+- Improved element initialization and caching flow
+
+### Removed
+- Global style injection (now uses Shadow DOM)
+
+### Fixed
+- Theme styles can no longer interfere with search UI appearance
+- Fixed theme update timing issue where `updateTheme()` was called before elements were cached
+
 ## [1.7.0] - 2025-01-23
 
 ### Changed
