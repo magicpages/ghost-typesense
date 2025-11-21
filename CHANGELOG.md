@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2025-11-21
+
+### Changed
+- **Reduced excerpt length**: Search result excerpts now limited to ~160 characters (200 with HTML tags)
+  - Prefer Typesense `snippet` field over `value` field for more concise excerpts
+  - Added automatic truncation as safety measure for long excerpts
+  - Improved readability of search results
+
+### Fixed
+- Fixed overly long search result excerpts that made results difficult to scan
+
 ## [1.10.0] - 2025-11-21
 
 ### Added
@@ -28,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Global style injection (now uses Shadow DOM)
+- Console statements for cleaner production builds
 
 ### Fixed
 - Theme styles can no longer interfere with search UI appearance
