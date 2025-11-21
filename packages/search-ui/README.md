@@ -18,6 +18,7 @@ A beautiful, accessible search interface for Ghost blogs using Typesense. This p
 - 💡 Exact phrase matching support
 - 🔍 Contextual excerpts that show search term in context
 - 🧩 Support for nested fields
+- 🛡️ **Style encapsulation with Web Components** - Uses Shadow DOM to prevent Ghost theme styles from interfering with the search UI
 
 ## Installation
 
@@ -137,6 +138,116 @@ https://yourblog.com/#/search/getting+started
 The search UI automatically detects and uses your Ghost site's accent color by reading the `--ghost-accent-color` CSS variable. This ensures that the search interface matches your site's branding.
 
 The UI also includes a built-in dark mode that automatically activates based on the user's system preferences. It can also be overwritten in the UI's configuration.
+
+### Web Component Architecture
+
+This search UI is built as a Web Component (`<magicpages-search>`) with Shadow DOM encapsulation. This means:
+
+- **Complete style isolation**: Ghost theme styles cannot interfere with the search UI
+- **No CSS conflicts**: The search UI styles won't leak into your page
+- **Consistent appearance**: The search UI looks the same regardless of theme styles
+- **Better performance**: Scoped styles are more efficient
+
+The component still respects your site's accent color through CSS custom properties, which inherit into Shadow DOM.
+
+## Internationalization (i18n)
+
+The search UI supports full internationalization, allowing you to translate all UI elements to any language.
+
+### Basic Usage
+
+Add translations to your configuration. You only need to provide the strings you want to override:
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+  // ... existing config
+  locale: 'de', // Optional: specify the locale
+  i18n: {
+    searchPlaceholder: 'Suche nach allem',
+    loadingMessage: 'Suche läuft...',
+    noResultsMessage: 'Keine Ergebnisse gefunden'
+  }
+}
+```
+
+### Available Translation Keys
+
+| Key | Default (English) | Description |
+|-----|-------------------|-------------|
+| `searchPlaceholder` | "Search for anything" | Placeholder text in search input |
+| `commonSearchesTitle` | "Common searches" | Heading for common searches section |
+| `emptyStateMessage` | "Start typing to search..." | Message shown when search is empty |
+| `loadingMessage` | "Searching..." | Message shown while searching |
+| `noResultsMessage` | "No results found for your search" | Message when no results found |
+| `navigateHint` | "to navigate" | Keyboard hint for navigation |
+| `closeHint` | "to close" | Keyboard hint for closing |
+| `ariaSearchLabel` | "Search" | ARIA label for search input |
+| `ariaCloseLabel` | "Close search" | ARIA label for close button |
+| `ariaResultsLabel` | "Search results" | ARIA label for results region |
+| `ariaArticleExcerpt` | "Article excerpt" | ARIA label for article excerpts |
+| `ariaModalLabel` | "Search" | ARIA label for modal |
+| `untitledPost` | "Untitled" | Fallback for posts without titles |
+
+### Example Translations
+
+**German (Deutsch):**
+```javascript
+i18n: {
+  searchPlaceholder: 'Suche nach allem',
+  commonSearchesTitle: 'Häufige Suchanfragen',
+  emptyStateMessage: 'Beginnen Sie mit der Eingabe...',
+  loadingMessage: 'Suche läuft...',
+  noResultsMessage: 'Keine Ergebnisse gefunden',
+  navigateHint: 'zum Navigieren',
+  closeHint: 'zum Schließen',
+  ariaSearchLabel: 'Suche',
+  ariaCloseLabel: 'Suche schließen',
+  untitledPost: 'Ohne Titel'
+}
+```
+
+**Spanish (Español):**
+```javascript
+i18n: {
+  searchPlaceholder: 'Buscar cualquier cosa',
+  commonSearchesTitle: 'Búsquedas comunes',
+  emptyStateMessage: 'Comienza a escribir para buscar...',
+  loadingMessage: 'Buscando...',
+  noResultsMessage: 'No se encontraron resultados',
+  navigateHint: 'para navegar',
+  closeHint: 'para cerrar',
+  ariaSearchLabel: 'Buscar',
+  ariaCloseLabel: 'Cerrar búsqueda',
+  untitledPost: 'Sin título'
+}
+```
+
+**French (Français):**
+```javascript
+i18n: {
+  searchPlaceholder: 'Rechercher n\'importe quoi',
+  commonSearchesTitle: 'Recherches courantes',
+  emptyStateMessage: 'Commencez à taper pour rechercher...',
+  loadingMessage: 'Recherche en cours...',
+  noResultsMessage: 'Aucun résultat trouvé',
+  navigateHint: 'pour naviguer',
+  closeHint: 'pour fermer',
+  ariaSearchLabel: 'Rechercher',
+  ariaCloseLabel: 'Fermer la recherche',
+  untitledPost: 'Sans titre'
+}
+```
+
+### Partial Overrides
+
+You don't need to provide all translation keys. Any keys you don't provide will fall back to English:
+
+```javascript
+i18n: {
+  searchPlaceholder: 'Buscar', // Only override this one
+  // Everything else uses English defaults
+}
+```
 
 ## License
 
