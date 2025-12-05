@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2025-11-28
+
+### Added
+- **Custom Typesense Search Parameters**: The search UI now supports `typesenseSearchParams` in the configuration
+  - Allows full control over Typesense search behavior (sort_by, filter_by, query_by, etc.)
+  - Enables advanced ranking strategies like recency boosting with `_text_match(buckets: N)`
+  - Supports `_eval()` for optional filtering to boost/demote specific content
+  - Custom params merge with defaults, only overriding specified fields
+  - Example: Prioritize recent English content by filtering older articles to lower positions
+
 ## [1.10.1] - 2025-11-21
 
 ### Changed
