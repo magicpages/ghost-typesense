@@ -577,7 +577,8 @@ import Typesense from 'typesense';
                 }
             });
 
-            return {
+            // Default search parameters
+            const defaultParams = {
                 query_by: searchFields.join(','),
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
@@ -591,6 +592,15 @@ import Typesense from 'typesense';
                 enable_nested_fields: true,
                 prioritize_exact_match: true,
                 sort_by: '_text_match:desc,published_at:desc'
+            };
+
+            // Merge with custom typesenseSearchParams from config (if provided)
+            // Custom params override defaults, allowing full control over sorting, filtering, etc.
+            const customParams = this.config.typesenseSearchParams || {};
+
+            return {
+                ...defaultParams,
+                ...customParams
             };
         }
 
