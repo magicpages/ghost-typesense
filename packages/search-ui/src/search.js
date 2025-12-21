@@ -598,6 +598,12 @@ import Typesense from 'typesense';
             // Custom params override defaults, allowing full control over sorting, filtering, etc.
             const customParams = this.config.typesenseSearchParams || {};
 
+            // If user provides custom query_by without custom weights, don't use default weights
+            // (they're taking control of fields, so weights should be explicit or equal)
+            if (customParams.query_by && !customParams.query_by_weights) {
+                delete defaultParams.query_by_weights;
+            }
+
             return {
                 ...defaultParams,
                 ...customParams
