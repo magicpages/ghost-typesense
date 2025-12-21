@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-cli",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "CLI tool for managing Ghost content in Typesense",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,8 +19,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@magicpages/ghost-typesense-config": "^1.11.0",
-    "@magicpages/ghost-typesense-core": "^1.11.0",
+    "@magicpages/ghost-typesense-config": "^1.11.1",
+    "@magicpages/ghost-typesense-core": "^1.11.1",
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
     "ora": "^8.0.1"

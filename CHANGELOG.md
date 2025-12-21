@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2025-12-21
+
+### Fixed
+- **Custom query_by without weights**: When providing custom `query_by` in `typesenseSearchParams` without `query_by_weights`, default weights are now properly removed
+  - Prevents mismatch between number of fields and number of weights
+  - Users who customize `query_by` now have full control without inheriting incompatible default weights
+
 ## [1.11.0] - 2025-11-28
 
 ### Added
