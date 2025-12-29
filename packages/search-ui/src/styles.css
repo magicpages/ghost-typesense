@@ -129,9 +129,9 @@
     .mp-search-container {
         padding: calc(1.25 * var(--mp-rem));
         height: auto;
-        max-height: 60vh;
+        max-height: 80vh;
         min-height: 20vh;
-        margin-top: 10vh;
+        margin-top: 5vh;
     }
 }
 
@@ -309,7 +309,7 @@
 @media (min-width: 640px) {
     .mp-search-results-container {
         height: auto;
-        max-height: calc(60vh - calc(4 * var(--mp-rem)));
+        max-height: calc(80vh - calc(4 * var(--mp-rem)));
         padding-bottom: calc(1 * var(--mp-rem));
     }
 }
