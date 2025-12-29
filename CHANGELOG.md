@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2] - 2025-12-29
+
+### Fixed
+- **Search modal too small on desktop**: Increased modal height from 60vh to 80vh and reduced top margin from 10vh to 5vh
+  - Shows 6-7 search results on typical laptop screens instead of 2-3
+  - Improves usability on MacBook Air and similar displays
+  - Mobile behavior unchanged (still uses full viewport height)
+
 ## [1.11.1] - 2025-12-21
 
 ### Fixed
