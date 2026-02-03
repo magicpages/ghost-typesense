@@ -613,11 +613,19 @@ import Typesense from 'typesense';
         handleKeydown(e) {
             if (e.key === 'Escape') {
                 e.preventDefault();
+                e.stopPropagation();
                 this.closeModal();
                 return;
             }
 
             if (e.target !== this.searchInput) return;
+
+            // Stop all keydown events from propagating outside the shadow DOM
+            // when the search input is focused. Without this, events bubble to
+            // the document where the target appears as the shadow host (not an
+            // input), causing browser extensions or theme JS to misinterpret
+            // keypresses (e.g. spacebar triggering page scroll/navigation).
+            e.stopPropagation();
 
             switch (e.key) {
                 case 'ArrowDown':
