@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.4] - 2026-02-03
+
+### Fixed
+- **Spacebar causes page navigation instead of typing space in search**: Added `stopPropagation()` to keydown events in the search modal
+  - When the search input (inside Shadow DOM) is focused, `document.activeElement` returns the shadow host, not the input — causing browser extensions, theme JS, or built-in browser behaviour to misinterpret keypresses as page-level actions
+  - Spacebar in particular could trigger scroll-to-next-page or extension-based pagination via `<link rel="next">`
+  - All keydown events are now contained within the modal when the search input is focused
+  - Escape key propagation is also stopped to prevent conflicts with other modal/overlay handlers
+
 ## [1.11.3] - 2026-01-04
 
 ### Fixed
