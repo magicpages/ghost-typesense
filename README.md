@@ -119,12 +119,12 @@ WEBHOOK_SECRET=your-secret-key  # Generate a random string
    - Give it a name (e.g. "Typesense Search")
    - Add these webhooks:
 
-  | Event | Target URL |
-  |--------|------------||
-  | Post published | `https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key` |
-  | Post updated | `https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key` |
-  | Post deleted | `https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key` |
-  | Post unpublished | `https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key` |
+| Event | Target URL |
+|---|---|
+| Post published | https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key |
+| Post updated | https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key |
+| Post deleted | https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key |
+| Post unpublished | https://your-site.netlify.app/.netlify/functions/handler?secret=your-secret-key |
 
 Now your search index will automatically update when you publish, update, or delete posts!
 
