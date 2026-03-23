@@ -75,30 +75,123 @@ window.__MP_SEARCH_CONFIG__ = {
 
 ### Configuration Options
 
-| Option | Type | Required | Description |
-|--------|------|----------|-------------|
-| `typesenseNodes` | `Array` | Yes | Array of Typesense node configurations |
-| `typesenseApiKey` | `String` | Yes | Search-only API key from Typesense |
-| `collectionName` | `String` | Yes | Name of your Typesense collection |
-| `theme` | `String` | No | UI theme: 'light', 'dark', or 'system' (default) |
-| `enableHighlighting` | `Boolean` | No | Whether to highlight search terms in results (default: true) |
-| `commonSearches` | `Array` | No | Array of suggested search terms |
-| `searchFields` | `Object` | No | Customize field weights and highlighting |
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `typesenseNodes` | `Array` | Yes | — | Array of Typesense node configurations (`host`, `port`, `protocol`) |
+| `typesenseApiKey` | `String` | Yes | — | Search-only API key from Typesense |
+| `collectionName` | `String` | Yes | — | Name of your Typesense collection |
+| `theme` | `String` | No | `'system'` | UI theme: `'light'`, `'dark'`, or `'system'` (respects OS preference) |
+| `enableHighlighting` | `Boolean` | No | `true` | Whether to highlight search terms in results |
+| `commonSearches` | `Array` | No | `[]` | Array of suggested search terms to display |
+| `searchFields` | `Object` | No | See below | Customize field weights and highlighting |
+| `typesenseSearchParams` | `Object` | No | `{}` | Override default Typesense search parameters (sorting, filtering, etc.) |
+| `locale` | `String` | No | `'en'` | Locale identifier for i18n translations |
+| `i18n` | `Object` | No | `{}` | Translation overrides for UI strings (see [Internationalization](#internationalization-i18n)) |
 
 ### Search Fields Configuration
 
-Customize search relevance with field weights and highlighting:
+Customize search relevance by assigning weights and enabling highlighting per field. Higher weights mean matches in that field are considered more relevant.
+
+**Default configuration:**
 
 ```javascript
 searchFields: {
     title: { weight: 5, highlight: true },
     plaintext: { weight: 4, highlight: true },
+    'tags.name': { weight: 4, highlight: true },
     excerpt: { weight: 3, highlight: true },
-    html: { weight: 1, highlight: true }
+    'tags.slug': { weight: 3, highlight: true }
 }
 ```
 
-The default weights are optimized to provide the most relevant results, prioritizing title matches, then plaintext content, followed by excerpt and HTML content.
+| Field | Default Weight | Description |
+|-------|---------------|-------------|
+| `title` | 5 | Post/page title — highest relevance |
+| `plaintext` | 4 | Plain text content of the post |
+| `tags.name` | 4 | Tag display names |
+| `excerpt` | 3 | Post excerpt |
+| `tags.slug` | 3 | Tag URL slugs |
+
+You can add additional fields (e.g., `html`) or adjust weights to tune relevance for your content:
+
+```javascript
+searchFields: {
+    title: { weight: 10, highlight: true },    // Boost title matches even more
+    plaintext: { weight: 5, highlight: true },
+    excerpt: { weight: 3, highlight: true },
+    html: { weight: 1, highlight: true }        // Include HTML content with low weight
+}
+```
+
+### Advanced Search Parameters
+
+Use `typesenseSearchParams` to override any of the default Typesense search parameters. Custom parameters are merged with the defaults, so you only need to specify what you want to change.
+
+**Default search parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `query_by` | Auto-generated from `searchFields` | Comma-separated list of fields to search |
+| `query_by_weights` | Auto-generated from `searchFields` | Relevance weights matching `query_by` fields |
+| `sort_by` | `'_text_match:desc,published_at:desc'` | Sort by text match relevance, then by publication date |
+| `prefix` | `true` | Enable prefix matching (matches partial words as you type) |
+| `per_page` | `20` | Number of results per page |
+| `typo_tolerance` | `false` | Whether to allow typo corrections in search |
+| `num_typos` | `0` | Maximum number of typos to tolerate per word |
+| `prioritize_exact_match` | `true` | Prioritize results with exact phrase matches |
+| `drop_tokens_threshold` | `0` | Token drop threshold for relaxing multi-word queries |
+| `enable_nested_fields` | `true` | Enable searching in nested fields (e.g., `tags.name`) |
+| `highlight_affix_num_tokens` | `30` | Number of surrounding tokens shown in highlighted excerpts |
+| `include_fields` | `'title,url,excerpt,plaintext,published_at,tags'` | Fields returned in search results |
+
+**Sorting examples:**
+
+```javascript
+typesenseSearchParams: {
+    // Sort by newest first, ignoring text relevance
+    sort_by: 'published_at:desc',
+
+    // Sort by relevance only (ignore publication date)
+    sort_by: '_text_match:desc',
+
+    // Default: relevance first, then newest
+    sort_by: '_text_match:desc,published_at:desc'
+}
+```
+
+**Enabling typo tolerance:**
+
+```javascript
+typesenseSearchParams: {
+    typo_tolerance: true,
+    num_typos: 2  // Allow up to 2 typos per word
+}
+```
+
+**Filtering results:**
+
+```javascript
+typesenseSearchParams: {
+    filter_by: 'tags.slug:=tutorials'  // Only show posts tagged "tutorials"
+}
+```
+
+**Full override example:**
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    typesenseSearchParams: {
+        sort_by: 'published_at:desc',
+        per_page: 10,
+        typo_tolerance: true,
+        num_typos: 1,
+        filter_by: 'tags.slug:!=internal'
+    }
+};
+```
+
+> **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
 
 ## Usage
 
@@ -128,7 +221,8 @@ https://yourblog.com/#/search/getting+started
 
 ### Keyboard Shortcuts
 
-- `/`: Open search
+- `/`: Open search (when not focused on an input field)
+- `Cmd/Ctrl + K`: Open search
 - `↑/↓`: Navigate through results
 - `Enter`: Select result
 - `Esc`: Close search
