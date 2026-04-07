@@ -139,6 +139,18 @@ import Typesense from 'typesense';
             return this.i18n[key] || this.defaultI18n[key] || key;
         }
 
+        // Convert absolute URL to relative path
+        toRelativeUrl(url) {
+            if (!url) return '#';
+            try {
+                const parsed = new URL(url);
+                return parsed.pathname + parsed.search + parsed.hash;
+            } catch {
+                // If URL parsing fails, return the original value
+                return url;
+            }
+        }
+
         async init() {
             this.createShadowContent();
             this.cacheElements();
@@ -530,8 +542,12 @@ import Typesense from 'typesense';
                                   hit.document.excerpt ||
                                   hit.document.plaintext?.substring(0, 80) || '';
 
+                    const resultUrl = this.config.transformToRelativeUrls
+                        ? this.toRelativeUrl(hit.document.url)
+                        : (hit.document.url || '#');
+
                     return `
-                        <a href="${hit.document.url || '#'}"
+                        <a href="${resultUrl}"
                             class="${CSS_PREFIX}-result-link"
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             <article class="${CSS_PREFIX}-result-item" role="article">
