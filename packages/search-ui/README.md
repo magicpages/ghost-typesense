@@ -85,6 +85,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `commonSearches` | `Array` | No | `[]` | Array of suggested search terms to display |
 | `searchFields` | `Object` | No | See below | Customize field weights and highlighting |
 | `typesenseSearchParams` | `Object` | No | `{}` | Override default Typesense search parameters (sorting, filtering, etc.) |
+| `transformToRelativeUrls` | `Boolean` | No | `false` | Convert result URLs to relative paths (useful for proxy domains or custom domain setups) |
 | `locale` | `String` | No | `'en'` | Locale identifier for i18n translations |
 | `i18n` | `Object` | No | `{}` | Translation overrides for UI strings (see [Internationalization](#internationalization-i18n)) |
 
