@@ -145,6 +145,19 @@ import Typesense from 'typesense';
             return this.i18n[key] || this.defaultI18n[key] || key;
         }
 
+        // Escape a value for safe interpolation into an HTML attribute. Used
+        // for indexed values (e.g. a document id) that are written into the
+        // results markup via innerHTML and would otherwise allow a crafted
+        // value to break out of its attribute.
+        escapeHtmlAttr(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Convert absolute URL to relative path
         toRelativeUrl(url) {
             if (!url) return '#';
@@ -658,7 +671,7 @@ import Typesense from 'typesense';
                     return `
                         <a href="${resultUrl}"
                             class="${CSS_PREFIX}-result-link"
-                            data-result-id="${hit.document.id || ''}"
+                            data-result-id="${this.escapeHtmlAttr(hit.document.id)}"
                             data-result-position="${index}"
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             <article class="${CSS_PREFIX}-result-item" role="article">
@@ -731,10 +744,27 @@ import Typesense from 'typesense';
                 delete defaultParams.query_by_weights;
             }
 
-            return {
+            const mergedParams = {
                 ...defaultParams,
                 ...customParams
             };
+
+            // Click analytics needs each hit's `id` in the response. A host
+            // that overrides `include_fields` may legitimately omit it, so
+            // re-add `id` when analytics is enabled — otherwise click events
+            // would report a null resultId.
+            if (this.isAnalyticsEnabled()) {
+                const fields = String(mergedParams.include_fields || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (!fields.includes('id')) {
+                    fields.unshift('id');
+                    mergedParams.include_fields = fields.join(',');
+                }
+            }
+
+            return mergedParams;
         }
 
         handleKeydown(e) {
