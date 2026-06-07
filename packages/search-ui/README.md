@@ -82,7 +82,9 @@ window.__MP_SEARCH_CONFIG__ = {
 | `collectionName` | `String` | Yes | — | Name of your Typesense collection |
 | `theme` | `String` | No | `'system'` | UI theme: `'light'`, `'dark'`, or `'system'` (respects OS preference) |
 | `enableHighlighting` | `Boolean` | No | `true` | Whether to highlight search terms in results |
-| `commonSearches` | `Array` | No | `[]` | Array of suggested search terms to display |
+| `commonSearches` | `Array` | No | `[]` | Static fallback list of suggested search terms (see [Search suggestions](#search-suggestions)) |
+| `pinnedSearches` | `Array` | No | `[]` | Publisher-curated terms, always shown first (see [Search suggestions](#search-suggestions)) |
+| `suggestionsUrl` | `String` | No | — | URL fetched on modal open for dynamic suggestions (see [Search suggestions](#search-suggestions)) |
 | `searchFields` | `Object` | No | See below | Customize field weights and highlighting |
 | `typesenseSearchParams` | `Object` | No | `{}` | Override default Typesense search parameters (sorting, filtering, etc.) |
 | `transformToRelativeUrls` | `Boolean` | No | `false` | Convert result URLs to relative paths (useful for proxy domains or custom domain setups) |
@@ -194,6 +196,40 @@ window.__MP_SEARCH_CONFIG__ = {
 ```
 
 > **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
+
+## Search suggestions
+
+Before a reader types anything, the modal can show a list of suggested searches. Suggestions come from up to three sources, resolved in this order:
+
+1. **`pinnedSearches`** — publisher-curated terms, always shown first in the order given.
+2. **`suggestionsUrl`** — terms fetched from a URL you provide (e.g. your most popular recent queries).
+3. **`commonSearches`** — a static fallback list.
+
+Duplicate terms across the three sources are collapsed (case-insensitively), so a pinned term won't also appear from the fetched or static lists.
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    pinnedSearches: ['New feature launch'],            // always first
+    suggestionsUrl: 'https://example.com/suggestions', // fetched on open
+    commonSearches: ['Getting started', 'Pricing']     // fallback
+};
+```
+
+### `suggestionsUrl`
+
+The URL is fetched **once per page session, lazily the first time the modal opens** — never on page load, so readers who never search incur no request. The result is cached for the rest of the session.
+
+The endpoint may return either a bare array of strings or an object with a `suggestions` array:
+
+```json
+["getting started", "pricing", "api reference"]
+```
+```json
+{ "suggestions": ["getting started", "pricing", "api reference"] }
+```
+
+The fetch is **fail-silent**: if the request errors or returns a non-success status, the widget falls back to `pinnedSearches` + `commonSearches` with no visible error, and does not retry that URL for the rest of the session. The widget is backend-agnostic — it only consumes the URL and does not define where the suggestions come from.
 
 ## Analytics
 
