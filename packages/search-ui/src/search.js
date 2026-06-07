@@ -79,6 +79,12 @@ import Typesense from 'typesense';
             // closes. Only used when `facets` is configured.
             this.selectedFacets = {};
 
+            // Suggestions fetched from `suggestionsUrl`, cached for the page
+            // session. `suggestionsFetched` guards against re-fetching (and
+            // re-failing) on every modal open.
+            this.fetchedSuggestions = [];
+            this.suggestionsFetched = false;
+
             // Default English translations
             this.defaultI18n = {
                 searchPlaceholder: 'Search for anything',
@@ -128,6 +134,7 @@ import Typesense from 'typesense';
             this.config = {
                 ...defaultConfig,
                 commonSearches: defaultConfig.commonSearches || [],
+                pinnedSearches: defaultConfig.pinnedSearches || [],
                 facets: defaultConfig.facets || []
             };
 
@@ -254,6 +261,69 @@ import Typesense from 'typesense';
             });
         }
 
+        // Resolve the suggestion list shown in the empty state, in priority
+        // order: pinned terms first (publisher-curated), then any terms
+        // fetched from `suggestionsUrl`, then the static `commonSearches`
+        // fallback. Duplicates are collapsed (case-insensitively) so a term
+        // never appears twice.
+        getSuggestions() {
+            const ordered = [
+                ...(this.config.pinnedSearches || []),
+                ...(this.fetchedSuggestions || []),
+                ...(this.config.commonSearches || [])
+            ];
+
+            const seen = new Set();
+            const result = [];
+            for (const term of ordered) {
+                if (typeof term !== 'string') continue;
+                const trimmed = term.trim();
+                if (!trimmed) continue;
+                const key = trimmed.toLowerCase();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                result.push(trimmed);
+            }
+            return result;
+        }
+
+        // Fetch suggestions from `suggestionsUrl` once per page session. The
+        // endpoint may return either a bare string[] or { suggestions: [...] }.
+        // Fail-silent: any error leaves fetchedSuggestions empty, so the empty
+        // state falls back to pinned + commonSearches. The fetched flag is set
+        // regardless of outcome so a failing URL is not retried on every open.
+        async fetchSuggestions() {
+            if (this.suggestionsFetched || !this.config.suggestionsUrl) return;
+            this.suggestionsFetched = true;
+
+            try {
+                const response = await fetch(this.config.suggestionsUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const list = Array.isArray(data) ? data : data?.suggestions;
+                if (Array.isArray(list)) {
+                    this.fetchedSuggestions = list.filter(t => typeof t === 'string');
+                }
+            } catch {
+                // Swallow — a failed fetch must not surface to the reader.
+            }
+        }
+
+        // Rebuild the suggestions block in place from the current resolved
+        // list. Replacing the block's contents discards the old delegated
+        // click listener with its container, so a single re-attach is correct
+        // (no double-binding).
+        renderSuggestions() {
+            if (!this.commonSearches) return;
+            this.commonSearches.innerHTML = this.getCommonSearchesInnerHtml();
+            this.attachCommonSearchListeners();
+        }
+
         async init() {
             this.createShadowContent();
             this.cacheElements();
@@ -342,29 +412,42 @@ import Typesense from 'typesense';
         }
 
         getCommonSearchesHtml() {
-            if (!this.config.commonSearches?.length) {
+            return `
+                <div class="${CSS_PREFIX}-common-searches">
+                    ${this.getCommonSearchesInnerHtml()}
+                </div>
+            `;
+        }
+
+        // The inner markup of the suggestions block, so it can be re-rendered
+        // independently once dynamic suggestions have been fetched. Suggestion
+        // strings may originate from a remote `suggestionsUrl`, so every term
+        // is escaped before being interpolated into the markup.
+        getCommonSearchesInnerHtml() {
+            const suggestions = this.getSuggestions();
+
+            if (!suggestions.length) {
                 return `
-                    <div class="${CSS_PREFIX}-common-searches">
-                        <div class="${CSS_PREFIX}-empty-message">${this.t('emptyStateMessage')}</div>
-                    </div>
+                    <div class="${CSS_PREFIX}-empty-message">${this.t('emptyStateMessage')}</div>
                 `;
             }
 
             return `
-                <div class="${CSS_PREFIX}-common-searches">
-                    <div class="${CSS_PREFIX}-common-searches-title" role="heading" aria-level="2">
-                        ${this.t('commonSearchesTitle')}
-                    </div>
-                    <div id="${CSS_PREFIX}-common-searches-container" role="list">
-                        ${this.config.commonSearches.map(search => `
+                <div class="${CSS_PREFIX}-common-searches-title" role="heading" aria-level="2">
+                    ${this.t('commonSearchesTitle')}
+                </div>
+                <div id="${CSS_PREFIX}-common-searches-container" role="list">
+                    ${suggestions.map(search => {
+                        const safe = this.escapeHtmlAttr(search);
+                        return `
                             <button type="button"
                                 class="${CSS_PREFIX}-common-search-btn"
-                                data-search="${search}"
+                                data-search="${safe}"
                                 role="listitem">
-                                ${search}
+                                ${safe}
                             </button>
-                        `).join('')}
-                    </div>
+                        `;
+                    }).join('')}
                 </div>
             `;
         }
@@ -534,6 +617,14 @@ import Typesense from 'typesense';
             setTimeout(() => {
                 this.searchInput.focus();
             }, 50);
+
+            // Lazily fetch dynamic suggestions on first open (no-op without a
+            // suggestionsUrl), then re-render the list. Done after the modal is
+            // shown so opening stays instant; the suggestions update in place
+            // when the fetch resolves.
+            if (this.config.suggestionsUrl && !this.suggestionsFetched) {
+                this.fetchSuggestions().then(() => this.renderSuggestions());
+            }
 
             // Update URL
             if (window.location.hash !== '#/search') {
