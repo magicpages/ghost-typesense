@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # npm dependencies across the monorepo root and every workspace. Group
+  # dev/build tooling (turbo, tsup, eslint, vitest, types, etc.) into a single
+  # weekly PR to keep noise low. Runtime dependencies are left ungrouped so
+  # each one gets its own PR — they ship in the published packages, so they
+  # warrant individual review.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # Keep the pinned GitHub Actions current (security patches land here).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
