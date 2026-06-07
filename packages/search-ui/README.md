@@ -88,6 +88,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `transformToRelativeUrls` | `Boolean` | No | `false` | Convert result URLs to relative paths (useful for proxy domains or custom domain setups) |
 | `locale` | `String` | No | `'en'` | Locale identifier for i18n translations |
 | `i18n` | `Object` | No | `{}` | Translation overrides for UI strings (see [Internationalization](#internationalization-i18n)) |
+| `analytics` | `Object` | No | — | Opt-in search analytics — emit query, click, and zero-result events to your own endpoint (see [Analytics](#analytics)) |
 
 ### Search Fields Configuration
 
@@ -143,7 +144,7 @@ Use `typesenseSearchParams` to override any of the default Typesense search para
 | `drop_tokens_threshold` | `0` | Token drop threshold for relaxing multi-word queries |
 | `enable_nested_fields` | `true` | Enable searching in nested fields (e.g., `tags.name`) |
 | `highlight_affix_num_tokens` | `30` | Number of surrounding tokens shown in highlighted excerpts |
-| `include_fields` | `'title,url,excerpt,plaintext,published_at,tags'` | Fields returned in search results |
+| `include_fields` | `'id,title,url,excerpt,plaintext,published_at,tags'` | Fields returned in search results |
 
 **Sorting examples:**
 
@@ -193,6 +194,57 @@ window.__MP_SEARCH_CONFIG__ = {
 ```
 
 > **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
+
+## Analytics
+
+Search analytics are **opt-in and disabled by default**. With no `analytics` configuration, the widget makes no network requests beyond Typesense.
+
+When you provide an `analytics.endpoint`, the widget emits lightweight events to that endpoint so you can learn what readers search for, what they click, and which queries return nothing. The widget only *emits* events — it does not ship a backend. You point it at an endpoint you operate (or any compatible analytics service).
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    analytics: {
+        endpoint: 'https://your-endpoint.example.com/collect', // required to enable
+        siteId: 'my-site',           // optional: identifies this site to your backend
+        token: 'public-write-token'  // optional: included with each event for auth
+    }
+};
+```
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `endpoint` | `String` | Yes | URL that receives events via HTTP POST. Its presence is what enables analytics. |
+| `siteId` | `String` | No | Opaque identifier sent with every event, so a single endpoint can serve multiple sites. |
+| `token` | `String` | No | Write token included in the event body, for endpoints that authenticate writes. |
+
+### Events
+
+Each event is POSTed as a JSON body. Three event types are emitted:
+
+| Event | When | Payload |
+|-------|------|---------|
+| `search` | A settled query returns results | `{ type: 'search', q, resultCount, siteId, token, ts }` |
+| `zero_result` | A settled query returns no results | `{ type: 'zero_result', q, resultCount: 0, siteId, token, ts }` |
+| `click` | A reader opens a result (by click or keyboard) | `{ type: 'click', q, resultId, position, siteId, token, ts }` |
+
+- `q` — the search query string
+- `resultCount` — total number of matches
+- `resultId` — the Typesense document `id` of the clicked result
+- `position` — zero-based index of the clicked result in the list
+- `ts` — client timestamp in milliseconds
+
+A `search` event is emitted once per settled query (typing character-by-character produces a single event for the final query, not one per keystroke). Reopening the search and repeating a query counts as a new search.
+
+### Transport and reliability
+
+Events are sent with [`navigator.sendBeacon()`](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/sendBeacon), falling back to `fetch(..., { keepalive: true })` where `sendBeacon` is unavailable. This means `click` events are delivered reliably even though clicking a result navigates away from the page.
+
+Analytics are **fail-silent**: any network error, or a non-success response from your endpoint, is swallowed and never affects the search experience.
+
+### Privacy
+
+The widget collects **no personal data**. It sets no cookies, stores no client-side tracking identifier, and performs no fingerprinting. Events contain only the query text, a clicked result's id and position, and a timestamp. Anything further (IP, geography, aggregation, retention) is entirely a matter for the endpoint you operate.
 
 ## Usage
 
