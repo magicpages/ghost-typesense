@@ -141,4 +141,74 @@ describe('Default Config Creation', () => {
 
     expect(config.collection.fields).toEqual(DEFAULT_COLLECTION_FIELDS);
   });
-}); 
+
+  it('should not add an embedding field by default (semantic search is opt-in)', () => {
+    expect(DEFAULT_COLLECTION_FIELDS.some((f) => f.name === 'embedding')).toBe(false);
+    expect(DEFAULT_COLLECTION_FIELDS.some((f) => 'embed' in f)).toBe(false);
+  });
+});
+
+describe('Semantic search field', () => {
+  const baseConfig = (embeddingField: unknown) => ({
+    ghost: { url: 'https://example.com', key: 'valid-key', version: 'v5.0' },
+    typesense: {
+      nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }],
+      apiKey: 'valid-key'
+    },
+    collection: {
+      name: 'posts',
+      fields: [...DEFAULT_COLLECTION_FIELDS, embeddingField]
+    }
+  });
+
+  it('should accept and preserve an auto-embedding field', () => {
+    const config = validateConfig(
+      baseConfig({
+        name: 'embedding',
+        type: 'float[]',
+        optional: true,
+        embed: {
+          from: ['title', 'plaintext', 'excerpt'],
+          model_config: { model_name: 'ts/all-MiniLM-L12-v2' }
+        }
+      })
+    );
+
+    const embeddingField = config.collection.fields.find((f) => f.name === 'embedding');
+    expect(embeddingField).toBeDefined();
+    // The embed block must survive validation — otherwise Typesense would
+    // never generate vectors and semantic search would silently not work.
+    expect(embeddingField?.embed?.from).toEqual(['title', 'plaintext', 'excerpt']);
+    expect(embeddingField?.embed?.model_config.model_name).toBe('ts/all-MiniLM-L12-v2');
+  });
+
+  it('should preserve extra model_config keys for external providers', () => {
+    const config = validateConfig(
+      baseConfig({
+        name: 'embedding',
+        type: 'float[]',
+        optional: true,
+        embed: {
+          from: ['title'],
+          model_config: { model_name: 'openai/text-embedding-3-small', api_key: 'sk-test' }
+        }
+      })
+    );
+
+    const embeddingField = config.collection.fields.find((f) => f.name === 'embedding');
+    expect((embeddingField?.embed?.model_config as Record<string, unknown>).api_key).toBe('sk-test');
+  });
+
+  it('should reject an embed block with no source fields', () => {
+    expect(() =>
+      validateConfig(
+        baseConfig({
+          name: 'embedding',
+          type: 'float[]',
+          optional: true,
+          embed: { from: [], model_config: { model_name: 'ts/all-MiniLM-L12-v2' } }
+        })
+      )
+    ).toThrow();
+  });
+});

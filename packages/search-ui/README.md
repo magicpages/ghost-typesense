@@ -89,6 +89,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `locale` | `String` | No | `'en'` | Locale identifier for i18n translations |
 | `i18n` | `Object` | No | `{}` | Translation overrides for UI strings (see [Internationalization](#internationalization-i18n)) |
 | `analytics` | `Object` | No | — | Opt-in search analytics — emit query, click, and zero-result events to your own endpoint (see [Analytics](#analytics)) |
+| `semanticSearch` | `Boolean` | No | `false` | Enable hybrid (keyword + vector) search against an embedding field (see [Semantic search](#semantic-search)) |
+| `embeddingFieldName` | `String` | No | `'embedding'` | Name of the collection's embedding field, used when `semanticSearch` is enabled |
 
 ### Search Fields Configuration
 
@@ -194,6 +196,24 @@ window.__MP_SEARCH_CONFIG__ = {
 ```
 
 > **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
+
+## Semantic search
+
+Semantic (hybrid) search is **opt-in and disabled by default**. By default the widget runs purely lexical queries — keyword matching with prefix matching, optional typo tolerance, and field weighting.
+
+When the collection has a vector embedding field, set `semanticSearch: true` and the widget appends that field to `query_by`, so Typesense fuses keyword relevance with vector similarity. This lets a search for "growing tomatoes" surface a post about "vegetable garden tips" even without overlapping words.
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    semanticSearch: true,
+    embeddingFieldName: 'embedding' // optional, defaults to 'embedding'
+};
+```
+
+This requires the collection to have been created with an auto-embedding field. That is configured on the indexing side — see the [collection schema and semantic search documentation in the project README](../../README.md#semantic-search). When `semanticSearch` is enabled but the collection has no matching embedding field, Typesense returns an error for the query; leave it `false` for lexical-only collections.
+
+You can still combine this with `typesenseSearchParams` — the embedding field is appended to whatever `query_by` is in effect, and `query_by_weights` is left untouched (the vector field carries no keyword weight).
 
 ## Analytics
 
