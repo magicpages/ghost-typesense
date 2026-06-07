@@ -74,6 +74,11 @@ import Typesense from 'typesense';
             this.lastQuery = '';
             this.lastTrackedQuery = null;
 
+            // Reader-selected facet values, keyed by field name. Each value is
+            // a Set of the chosen values for that field. Reset when the modal
+            // closes. Only used when `facets` is configured.
+            this.selectedFacets = {};
+
             // Suggestions fetched from `suggestionsUrl`, cached for the page
             // session. `suggestionsFetched` guards against re-fetching (and
             // re-failing) on every modal open.
@@ -94,6 +99,8 @@ import Typesense from 'typesense';
                 ariaResultsLabel: 'Search results',
                 ariaArticleExcerpt: 'Article excerpt',
                 ariaModalLabel: 'Search',
+                ariaFacetsLabel: 'Filters',
+                clearFiltersLabel: 'Clear filters',
                 untitledPost: 'Untitled'
             };
         }
@@ -127,7 +134,8 @@ import Typesense from 'typesense';
             this.config = {
                 ...defaultConfig,
                 commonSearches: defaultConfig.commonSearches || [],
-                pinnedSearches: defaultConfig.pinnedSearches || []
+                pinnedSearches: defaultConfig.pinnedSearches || [],
+                facets: defaultConfig.facets || []
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -370,6 +378,7 @@ import Typesense from 'typesense';
                             </div>
                             <div class="${CSS_PREFIX}-results-container">
                                 ${this.getCommonSearchesHtml()}
+                                <div id="${CSS_PREFIX}-facets" class="${CSS_PREFIX}-facets ${CSS_PREFIX}-hidden" role="group" aria-label="${this.t('ariaFacetsLabel')}"></div>
                                 <div id="${CSS_PREFIX}-hits" class="${CSS_PREFIX}-hits-list" role="region" aria-label="${this.t('ariaResultsLabel')}"></div>
                                 <div id="${CSS_PREFIX}-loading" class="${CSS_PREFIX}-loading ${CSS_PREFIX}-hidden" role="status" aria-live="polite">
                                     <div class="${CSS_PREFIX}-spinner" aria-hidden="true"></div>
@@ -396,6 +405,7 @@ import Typesense from 'typesense';
             this.searchInput = this.shadowRoot.querySelector(`.${CSS_PREFIX}-input`);
             this.searchForm = this.shadowRoot.querySelector(`.${CSS_PREFIX}-form`);
             this.hitsList = this.shadowRoot.querySelector(`#${CSS_PREFIX}-hits`);
+            this.facetsContainer = this.shadowRoot.querySelector(`#${CSS_PREFIX}-facets`);
             this.commonSearches = this.shadowRoot.querySelector(`.${CSS_PREFIX}-common-searches`);
             this.loadingState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-loading`);
             this.emptyState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-empty`);
@@ -498,6 +508,9 @@ import Typesense from 'typesense';
 
             // Common searches
             this.attachCommonSearchListeners();
+
+            // Facet chips (delegated; container persists across re-renders)
+            this.attachFacetListeners();
 
             // Keyboard shortcuts (attached to document, outside shadow DOM)
             document.addEventListener('keydown', (e) => {
@@ -647,6 +660,8 @@ import Typesense from 'typesense';
             // the first search is emitted even if it repeats a prior query.
             this.lastQuery = '';
             this.lastTrackedQuery = null;
+            // Clear any active facet filters so a new session starts unfiltered.
+            this.selectedFacets = {};
             this.handleSearch('');
 
             // Restore focus
@@ -669,6 +684,7 @@ import Typesense from 'typesense';
                 if (this.commonSearches) this.commonSearches.classList.remove(`${CSS_PREFIX}-hidden`);
                 if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
+                if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
                 return;
             }
 
@@ -712,6 +728,13 @@ import Typesense from 'typesense';
                 // result click can be attributed to it.
                 this.lastQuery = query;
                 this.trackSearch(query, resultCount);
+
+                // Render facet chips from the returned counts. Done before the
+                // no-results check so a reader can still clear a filter that
+                // produced zero results.
+                if (this.config.facets?.length) {
+                    this.renderFacets(results.facet_counts);
+                }
 
                 if (results.hits.length === 0) {
                     if (this.emptyState) this.emptyState.classList.remove(`${CSS_PREFIX}-hidden`);
@@ -782,6 +805,7 @@ import Typesense from 'typesense';
                     this.hitsList.innerHTML = '';
                     this.hitsList.classList.add(`${CSS_PREFIX}-hidden`);
                 }
+                if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
             }
         }
 
@@ -872,7 +896,160 @@ import Typesense from 'typesense';
                 }
             }
 
+            // Reader-facing facets: request facet counts for the configured
+            // fields and AND any selected values into `filter_by`, preserving a
+            // publisher-configured filter rather than overwriting it.
+            if (this.config.facets?.length) {
+                mergedParams.facet_by = this.config.facets.map(f => f.field).join(',');
+
+                const maxValues = Math.max(...this.config.facets.map(f => f.limit || 10));
+                if (Number.isFinite(maxValues)) {
+                    mergedParams.max_facet_values = maxValues;
+                }
+
+                const composed = this.composeFilterBy(mergedParams.filter_by);
+                if (composed) {
+                    mergedParams.filter_by = composed;
+                } else {
+                    delete mergedParams.filter_by;
+                }
+            }
+
             return mergedParams;
+        }
+
+        // Build the `filter_by` clause for the currently selected facet values:
+        // values within a field are OR-ed, and the per-field clauses are
+        // AND-ed together. Values are backtick-quoted (with any backticks
+        // stripped) so spaces and commas don't break the expression.
+        buildFacetFilter() {
+            const clauses = [];
+            for (const facet of this.config.facets || []) {
+                const values = this.selectedFacets[facet.field];
+                if (!values || values.size === 0) continue;
+                const quoted = [...values]
+                    .map(v => `\`${String(v).replace(/`/g, '')}\``)
+                    .join(',');
+                clauses.push(`${facet.field}:=[${quoted}]`);
+            }
+            return clauses.join(' && ');
+        }
+
+        // Combine the selected-facet filter with a publisher-provided
+        // `filter_by` (from typesenseSearchParams). Both sides are wrapped in
+        // parentheses and AND-ed so neither clobbers the other. Returns an
+        // empty string when there is nothing to filter by.
+        composeFilterBy(existingFilter) {
+            const facetFilter = this.buildFacetFilter();
+            const existing = (existingFilter || '').trim();
+
+            if (existing && facetFilter) {
+                return `(${existing}) && (${facetFilter})`;
+            }
+            return existing || facetFilter;
+        }
+
+        // Render the facet chip groups from the facet counts Typesense returned
+        // for the current query. Each value is a toggle button (aria-pressed
+        // reflects selection); a "clear filters" button appears when anything
+        // is selected. Hidden entirely when no facets are configured or no
+        // counts came back.
+        renderFacets(facetCounts) {
+            if (!this.facetsContainer) return;
+
+            if (!this.config.facets?.length || !Array.isArray(facetCounts) || facetCounts.length === 0) {
+                this.facetsContainer.innerHTML = '';
+                this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
+                return;
+            }
+
+            // Map configured fields to their display labels and order.
+            const countsByField = {};
+            for (const fc of facetCounts) {
+                countsByField[fc.field_name] = fc.counts || [];
+            }
+
+            const groups = this.config.facets.map(facet => {
+                const counts = countsByField[facet.field] || [];
+                if (counts.length === 0) return '';
+
+                const selected = this.selectedFacets[facet.field];
+                const chips = counts.map(({ value, count }) => {
+                    const isSelected = selected ? selected.has(value) : false;
+                    const safeValue = this.escapeHtmlAttr(value);
+                    return `
+                        <button type="button"
+                            class="${CSS_PREFIX}-facet-chip${isSelected ? ` ${CSS_PREFIX}-facet-chip-selected` : ''}"
+                            data-facet-field="${this.escapeHtmlAttr(facet.field)}"
+                            data-facet-value="${safeValue}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}">
+                            <span class="${CSS_PREFIX}-facet-chip-label">${safeValue}</span>
+                            <span class="${CSS_PREFIX}-facet-chip-count">${count}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="${CSS_PREFIX}-facet-group">
+                        <div class="${CSS_PREFIX}-facet-group-label">${this.escapeHtmlAttr(facet.label || facet.field)}</div>
+                        <div class="${CSS_PREFIX}-facet-chips" role="list">${chips}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const hasSelection = Object.values(this.selectedFacets).some(s => s && s.size > 0);
+            const clearButton = hasSelection
+                ? `<button type="button" class="${CSS_PREFIX}-facet-clear">${this.t('clearFiltersLabel')}</button>`
+                : '';
+
+            this.facetsContainer.innerHTML = groups + clearButton;
+            this.facetsContainer.classList.toggle(`${CSS_PREFIX}-hidden`, groups.trim() === '');
+        }
+
+        // Delegated handler for facet chip toggles and the clear-filters
+        // button. Toggling a value updates the selection and re-runs the
+        // current query so results and counts reflect the active filters.
+        attachFacetListeners() {
+            if (!this.facetsContainer) return;
+
+            this.facetsContainer.addEventListener('click', (e) => {
+                const clearBtn = e.target.closest(`.${CSS_PREFIX}-facet-clear`);
+                if (clearBtn) {
+                    e.preventDefault();
+                    this.selectedFacets = {};
+                    this.rerunQueryForFacets();
+                    return;
+                }
+
+                const chip = e.target.closest(`.${CSS_PREFIX}-facet-chip`);
+                if (!chip) return;
+                e.preventDefault();
+
+                const field = chip.dataset.facetField;
+                const value = chip.dataset.facetValue;
+                if (!field || value === undefined) return;
+
+                if (!this.selectedFacets[field]) {
+                    this.selectedFacets[field] = new Set();
+                }
+                const set = this.selectedFacets[field];
+                if (set.has(value)) {
+                    set.delete(value);
+                } else {
+                    set.add(value);
+                }
+
+                this.rerunQueryForFacets();
+            });
+        }
+
+        // Re-run the active query after a facet change, using the live input
+        // value (falling back to the last searched query).
+        rerunQueryForFacets() {
+            const query = this.searchInput?.value?.trim() || this.lastQuery;
+            if (query) {
+                this.handleSearch(query);
+            }
         }
 
         handleKeydown(e) {

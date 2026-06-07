@@ -376,6 +376,85 @@
     border-color: var(--accent-color);
 }
 
+/* Reader-facing facet filters */
+.mp-search-facets {
+    display: flex;
+    flex-direction: column;
+    gap: calc(0.75 * var(--mp-rem));
+    padding: calc(0.75 * var(--mp-rem)) 0;
+}
+
+.mp-search-facet-group {
+    display: flex;
+    flex-direction: column;
+    gap: calc(0.5 * var(--mp-rem));
+}
+
+.mp-search-facet-group-label {
+    color: var(--color-text-secondary);
+    font-size: calc(0.75 * var(--mp-rem));
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.mp-search-facet-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(0.5 * var(--mp-rem));
+}
+
+.mp-search-facet-chip {
+    background: transparent;
+    border: 1px solid var(--color-border, var(--color-result-hover));
+    color: var(--color-text);
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: calc(0.375 * var(--mp-rem));
+    padding: calc(0.375 * var(--mp-rem)) calc(0.75 * var(--mp-rem));
+    font-size: calc(0.8125 * var(--mp-rem));
+    line-height: 1.2;
+    transition: all var(--transition-base);
+}
+
+.mp-search-facet-chip:hover,
+.mp-search-facet-chip:focus-visible {
+    background: var(--color-result-hover);
+    border-color: var(--accent-color);
+}
+
+.mp-search-facet-chip-selected,
+.mp-search-facet-chip[aria-pressed="true"] {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+}
+
+.mp-search-facet-chip-count {
+    font-size: calc(0.6875 * var(--mp-rem));
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+}
+
+.mp-search-facet-clear {
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    color: var(--accent-color);
+    cursor: pointer;
+    font-size: calc(0.8125 * var(--mp-rem));
+    padding: calc(0.25 * var(--mp-rem)) 0;
+    text-decoration: underline;
+    transition: opacity var(--transition-base);
+}
+
+.mp-search-facet-clear:hover,
+.mp-search-facet-clear:focus-visible {
+    opacity: 0.7;
+}
+
 .mp-search-hits-list {
     margin-block-start: calc(0.5 * var(--mp-rem));
     margin-block-end: calc(0.5 * var(--mp-rem));
