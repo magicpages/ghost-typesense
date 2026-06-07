@@ -68,6 +68,12 @@ import Typesense from 'typesense';
             this.cachedElements = {};
             this.typesenseClient = null;
 
+            // Analytics: the query that produced the currently rendered
+            // results (used to attribute clicks), and the last query for
+            // which a `search` event was already emitted (de-dupes repeats).
+            this.lastQuery = '';
+            this.lastTrackedQuery = null;
+
             // Default English translations
             this.defaultI18n = {
                 searchPlaceholder: 'Search for anything',
@@ -139,6 +145,19 @@ import Typesense from 'typesense';
             return this.i18n[key] || this.defaultI18n[key] || key;
         }
 
+        // Escape a value for safe interpolation into an HTML attribute. Used
+        // for indexed values (e.g. a document id) that are written into the
+        // results markup via innerHTML and would otherwise allow a crafted
+        // value to break out of its attribute.
+        escapeHtmlAttr(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Convert absolute URL to relative path
         toRelativeUrl(url) {
             if (!url) return '#';
@@ -149,6 +168,82 @@ import Typesense from 'typesense';
                 // If URL parsing fails, return the original value
                 return url;
             }
+        }
+
+        // Analytics is strictly opt-in: it is only active when the host page
+        // provides an endpoint to receive events. With no `analytics.endpoint`
+        // configured, the widget makes no requests beyond Typesense.
+        isAnalyticsEnabled() {
+            return !!(this.config.analytics && this.config.analytics.endpoint);
+        }
+
+        // Send a single analytics event. Uses navigator.sendBeacon so events
+        // survive page navigation (clicking a result unloads the page) and
+        // never block the UI thread, falling back to fetch(keepalive) where
+        // sendBeacon is unavailable. Fully fail-silent: any transport error,
+        // or a non-2xx response, must never surface to the reader or break
+        // search.
+        sendAnalyticsEvent(event) {
+            if (!this.isAnalyticsEnabled()) return;
+
+            try {
+                const { endpoint, siteId, token } = this.config.analytics;
+                const payload = {
+                    ...event,
+                    siteId: siteId || null,
+                    token: token || undefined,
+                    ts: Date.now()
+                };
+                const body = JSON.stringify(payload);
+
+                // sendBeacon is the preferred transport: it is fire-and-forget
+                // and is not cancelled when the document starts unloading.
+                if (navigator.sendBeacon) {
+                    const blob = new Blob([body], { type: 'application/json' });
+                    if (navigator.sendBeacon(endpoint, blob)) return;
+                }
+
+                // Fallback for environments without sendBeacon.
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    keepalive: true,
+                    mode: 'cors',
+                    credentials: 'omit'
+                }).catch(() => {});
+            } catch {
+                // Swallow everything — analytics must never affect search.
+            }
+        }
+
+        // Emit a `search` event for a settled query, plus a derived
+        // `zero_result` event when the query returned nothing. De-duplicated
+        // so re-running the same settled query (e.g. reopening the modal with
+        // a ?q= parameter) emits at most one `search` event.
+        trackSearch(query, resultCount) {
+            if (!this.isAnalyticsEnabled() || !query) return;
+            if (query === this.lastTrackedQuery) return;
+            this.lastTrackedQuery = query;
+
+            this.sendAnalyticsEvent({ type: 'search', q: query, resultCount });
+
+            if (resultCount === 0) {
+                this.sendAnalyticsEvent({ type: 'zero_result', q: query, resultCount: 0 });
+            }
+        }
+
+        // Emit a `click` event attributing a result selection to the query
+        // that produced it. Called before navigation; sendBeacon survives the
+        // unload that the navigation triggers.
+        trackClick(resultId, position) {
+            if (!this.isAnalyticsEnabled() || !this.lastQuery) return;
+            this.sendAnalyticsEvent({
+                type: 'click',
+                q: this.lastQuery,
+                resultId: resultId || null,
+                position: typeof position === 'number' ? position : null
+            });
         }
 
         async init() {
@@ -306,6 +401,18 @@ import Typesense from 'typesense';
                 }, 80);
             });
 
+            // Result clicks (delegated) — emit a click event before the
+            // browser navigates. Uses capture so it runs before the link's
+            // default navigation begins unloading the page.
+            if (this.hitsList) {
+                this.hitsList.addEventListener('click', (e) => {
+                    const link = e.target.closest(`.${CSS_PREFIX}-result-link`);
+                    if (!link) return;
+                    const position = Number(link.dataset.resultPosition);
+                    this.trackClick(link.dataset.resultId, Number.isNaN(position) ? null : position);
+                }, true);
+            }
+
             // Common searches
             this.attachCommonSearchListeners();
 
@@ -445,6 +552,10 @@ import Typesense from 'typesense';
             if (this.searchInput) {
                 this.searchInput.value = '';
             }
+            // Reset analytics session state so the next time the modal opens,
+            // the first search is emitted even if it repeats a prior query.
+            this.lastQuery = '';
+            this.lastTrackedQuery = null;
             this.handleSearch('');
 
             // Restore focus
@@ -500,6 +611,17 @@ import Typesense from 'typesense';
 
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
 
+                // Total matches across all pages; fall back to the hit count
+                // on this page when `found` is absent.
+                const resultCount = typeof results.found === 'number'
+                    ? results.found
+                    : results.hits.length;
+
+                // Remember the query behind the rendered results so a later
+                // result click can be attributed to it.
+                this.lastQuery = query;
+                this.trackSearch(query, resultCount);
+
                 if (results.hits.length === 0) {
                     if (this.emptyState) this.emptyState.classList.remove(`${CSS_PREFIX}-hidden`);
                     if (this.hitsList) {
@@ -514,7 +636,7 @@ import Typesense from 'typesense';
                 // Clear and populate results
                 this.hitsList.innerHTML = '';
 
-                const resultsHtml = results.hits.map(hit => {
+                const resultsHtml = results.hits.map((hit, index) => {
                     // Use highlighted content when available, otherwise fall back to original
                     const getHighlightedTitle = (fieldName, fallback) => {
                         if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
@@ -549,6 +671,8 @@ import Typesense from 'typesense';
                     return `
                         <a href="${resultUrl}"
                             class="${CSS_PREFIX}-result-link"
+                            data-result-id="${this.escapeHtmlAttr(hit.document.id)}"
+                            data-result-position="${index}"
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             <article class="${CSS_PREFIX}-result-item" role="article">
                                 <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
@@ -599,7 +723,7 @@ import Typesense from 'typesense';
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
                 highlight_affix_num_tokens: 30,
-                include_fields: 'title,url,excerpt,plaintext,published_at,tags',
+                include_fields: 'id,title,url,excerpt,plaintext,published_at,tags',
                 typo_tolerance: false,
                 num_typos: 0,
                 prefix: true,
@@ -620,10 +744,27 @@ import Typesense from 'typesense';
                 delete defaultParams.query_by_weights;
             }
 
-            return {
+            const mergedParams = {
                 ...defaultParams,
                 ...customParams
             };
+
+            // Click analytics needs each hit's `id` in the response. A host
+            // that overrides `include_fields` may legitimately omit it, so
+            // re-add `id` when analytics is enabled — otherwise click events
+            // would report a null resultId.
+            if (this.isAnalyticsEnabled()) {
+                const fields = String(mergedParams.include_fields || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (!fields.includes('id')) {
+                    fields.unshift('id');
+                    mergedParams.include_fields = fields.join(',');
+                }
+            }
+
+            return mergedParams;
         }
 
         handleKeydown(e) {
@@ -690,6 +831,8 @@ import Typesense from 'typesense';
             if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
                 const selectedElement = results[this.selectedIndex];
                 if (selectedElement.classList.contains(`${CSS_PREFIX}-result-link`)) {
+                    const position = Number(selectedElement.dataset.resultPosition);
+                    this.trackClick(selectedElement.dataset.resultId, Number.isNaN(position) ? null : position);
                     window.location.href = selectedElement.href;
                 } else {
                     this.searchInput.value = selectedElement.textContent.trim();
