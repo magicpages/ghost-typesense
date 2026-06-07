@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (e.g. when pushing again to a PR).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: lint · typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` runs the repo's postinstall (`turbo run build` of the config
+      # and core packages), so their dist/ types are present before the
+      # typecheck step needs them.
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The browser search widget is the package's published runtime artifact.
+      # Upload it so a PR's bundle can be inspected/downloaded without a local
+      # build.
+      - name: Upload search-ui bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-ui-dist
+          path: packages/search-ui/dist
+          if-no-files-found: error
+          retention-days: 7
