@@ -1,5 +1,6 @@
 import { TSGhostContentAPI, type Post as GhostPost } from '@ts-ghost/content-api';
 import { Client } from 'typesense';
+import type { CollectionFieldSchema } from 'typesense/lib/Typesense/Collection';
 import type { Config } from '@magicpages/ghost-typesense-config';
 
 export interface Post {
@@ -45,6 +46,31 @@ export class GhostTypesenseManager {
   }
 
   /**
+   * Build the Typesense collection schema from the configured fields.
+   *
+   * Only defined properties are copied so the payload stays clean, and the
+   * vector-search properties (`embed`, `num_dim`) are passed through when
+   * present — these are what opt a field into semantic search.
+   * @private
+   */
+  private buildCollectionSchema() {
+    return {
+      name: this.collectionName,
+      fields: this.config.collection.fields.map((field): CollectionFieldSchema => {
+        const mapped: CollectionFieldSchema = { name: field.name, type: field.type };
+        if (field.facet !== undefined) mapped.facet = field.facet;
+        if (field.index !== undefined) mapped.index = field.index;
+        if (field.optional !== undefined) mapped.optional = field.optional;
+        if (field.sort !== undefined) mapped.sort = field.sort;
+        if (field.embed !== undefined) mapped.embed = field.embed;
+        if (field.num_dim !== undefined) mapped.num_dim = field.num_dim;
+        return mapped;
+      }),
+      enable_nested_fields: true // Enable nested fields support
+    };
+  }
+
+  /**
    * Initialize the Typesense collection with the specified schema
    */
   async initializeCollection(): Promise<void> {
@@ -56,21 +82,7 @@ export class GhostTypesenseManager {
       await collection.delete();
     }
 
-    // Add support for nested fields
-    const schema = {
-      name: this.collectionName,
-      fields: this.config.collection.fields.map((field) => ({
-        name: field.name,
-        type: field.type,
-        facet: field.facet,
-        index: field.index,
-        optional: field.optional,
-        sort: field.sort
-      })),
-      enable_nested_fields: true // Enable nested fields support
-    };
-
-    await this.typesense.collections().create(schema);
+    await this.typesense.collections().create(this.buildCollectionSchema());
   }
 
   /**
@@ -153,6 +165,12 @@ export class GhostTypesenseManager {
     // Add any additional fields specified in the config
     // Only add fields that haven't already been transformed to avoid overriding custom transformations
     this.config.collection.fields.forEach((field) => {
+      // Skip auto-embedding fields: Typesense generates their vectors from the
+      // configured source fields at index time, and supplying a value would be
+      // rejected.
+      if (field.embed) {
+        return;
+      }
       const value = post[field.name as keyof GhostPost];
       if (!(field.name in transformed) && value !== undefined && value !== null) {
         transformed[field.name] = value;
@@ -459,18 +477,6 @@ export class GhostTypesenseManager {
     const collection = this.typesense.collections(this.collectionName);
     await collection.delete();
 
-    const schema = {
-      name: this.collectionName,
-      fields: this.config.collection.fields.map((field) => ({
-        name: field.name,
-        type: field.type,
-        facet: field.facet,
-        index: field.index,
-        optional: field.optional,
-        sort: field.sort
-      }))
-    };
-
-    await this.typesense.collections().create(schema);
+    await this.typesense.collections().create(this.buildCollectionSchema());
   }
 } 
