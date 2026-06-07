@@ -855,6 +855,23 @@ import Typesense from 'typesense';
                 }
             }
 
+            // Semantic (hybrid) search: when enabled, append the embedding
+            // field to `query_by`. Typesense then fuses keyword and vector
+            // relevance, auto-embedding the query against the field's model.
+            // The vector field carries no keyword weight, so query_by_weights
+            // is left untouched. When disabled, queries stay purely lexical.
+            if (this.config.semanticSearch) {
+                const embeddingField = this.config.embeddingFieldName || 'embedding';
+                const queryFields = String(mergedParams.query_by || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (!queryFields.includes(embeddingField)) {
+                    queryFields.push(embeddingField);
+                    mergedParams.query_by = queryFields.join(',');
+                }
+            }
+
             return mergedParams;
         }
 

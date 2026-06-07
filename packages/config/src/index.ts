@@ -42,6 +42,22 @@ export const TypesenseConfigSchema = z.object({
 });
 
 /**
+ * Auto-embedding configuration for a vector field.
+ *
+ * When present on a `float[]` field, Typesense generates the field's vector
+ * server-side from the listed source fields, using either a built-in model
+ * (e.g. `ts/all-MiniLM-L12-v2`) or an external provider (OpenAI, etc.) via
+ * `model_config`. See the Typesense vector-search documentation for the full
+ * set of `model_config` options (`api_key`, `url`, `access_token`, ...).
+ */
+export const EmbedSchema = z.object({
+  from: z.array(z.string()).min(1),
+  model_config: z.object({
+    model_name: z.string().min(1)
+  }).passthrough()
+});
+
+/**
  * Collection field configuration schema
  */
 export const CollectionFieldSchema = z.object({
@@ -50,7 +66,12 @@ export const CollectionFieldSchema = z.object({
   facet: z.boolean().optional(),
   index: z.boolean().optional(),
   optional: z.boolean().optional(),
-  sort: z.boolean().optional()
+  sort: z.boolean().optional(),
+  // Vector-search support. `embed` opts a `float[]` field into auto-embedding;
+  // `num_dim` declares the dimension when supplying vectors manually (it is
+  // inferred from the model when `embed` is used).
+  embed: EmbedSchema.optional(),
+  num_dim: z.number().int().positive().optional()
 }).transform(data => ({
   ...data,
   optional: data.optional ?? false
@@ -144,6 +165,7 @@ export const ConfigSchema = z.object({
 export type GhostConfig = z.infer<typeof GhostConfigSchema>;
 export type TypesenseNode = z.infer<typeof TypesenseNodeSchema>;
 export type TypesenseConfig = z.infer<typeof TypesenseConfigSchema>;
+export type Embed = z.infer<typeof EmbedSchema>;
 export type CollectionField = z.infer<typeof CollectionFieldSchema>;
 export type CollectionConfig = z.infer<typeof CollectionConfigSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

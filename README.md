@@ -128,6 +128,51 @@ WEBHOOK_SECRET=your-secret-key  # Generate a random string
 
 Now your search index will automatically update when you publish, update, or delete posts!
 
+## Semantic search
+
+By default search is purely lexical. You can optionally enable **semantic (hybrid) search**, where Typesense ranks results by a fusion of keyword relevance and vector similarity — so a query matches on meaning, not just shared words. This needs no extra infrastructure: Typesense generates the embeddings itself.
+
+### 1. Add an embedding field to the collection schema
+
+Add a `float[]` field with an `embed` block to your `collection.fields` in `ghost-typesense.config.json`. The `from` fields are the content Typesense embeds; `model_config.model_name` selects the model.
+
+```json
+{
+  "collection": {
+    "name": "ghost",
+    "fields": [
+      { "name": "embedding", "type": "float[]", "optional": true,
+        "embed": {
+          "from": ["title", "plaintext", "excerpt"],
+          "model_config": { "model_name": "ts/all-MiniLM-L12-v2" }
+        }
+      }
+    ]
+  }
+}
+```
+
+> When you provide a custom `fields` array, the required content fields (`id`, `title`, `url`, `slug`, `html`, `plaintext`, `excerpt`, `published_at`, `updated_at`) are still enforced and merged in automatically, so you only need to add the `embedding` field itself.
+
+**Models.** You can use a built-in Typesense model (e.g. `ts/all-MiniLM-L12-v2`) which runs locally on the Typesense server at no per-document cost, or an external provider by passing its details in `model_config` (for example an OpenAI model with `model_name`, `api_key`). Built-in models keep everything self-contained; external models can offer higher quality at a per-document API cost.
+
+Then `init` and `sync` as usual — Typesense embeds each document at index time:
+
+```bash
+ghost-typesense init --config ghost-typesense.config.json
+ghost-typesense sync --config ghost-typesense.config.json
+```
+
+### 2. Enable hybrid querying in the search UI
+
+Set `semanticSearch: true` in your search config — see the [search-ui semantic search docs](packages/search-ui/README.md#semantic-search).
+
+### Requirements and tradeoffs
+
+- **Typesense version.** Auto-embedding with built-in models requires Typesense **v0.25.0 or newer** (the build that ships the ML models). External-provider embedding is available from the same versions.
+- **Memory.** Vector fields meaningfully increase a collection's RAM footprint. Benchmark on a representative slice of your content before enabling it for a large blog.
+- **Index time.** Generating embeddings adds latency to syncing. Built-in models add CPU time on the Typesense server; external providers add per-document API calls (and their cost). Large initial syncs take noticeably longer than lexical-only indexing.
+
 ## Packages
 
 | Package | Description |
