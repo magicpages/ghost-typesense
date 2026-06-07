@@ -244,7 +244,7 @@ Analytics are **fail-silent**: any network error, or a non-success response from
 
 ### Privacy
 
-The widget collects **no personal data**. It sets no cookies, stores no client-side tracking identifier, and performs no fingerprinting. Events contain only the query text, a clicked result's id and position, and a timestamp. Anything further (IP, geography, aggregation, retention) is entirely a matter for the endpoint you operate.
+The widget uses **no persistent client-side tracking**: it sets no cookies, stores no tracking identifier, and performs no fingerprinting. Each event contains only the search query, a clicked result's id and position, and a timestamp. Note that the query text is user-provided input and may itself contain personal data depending on what a reader types. Anything further — associating events with a person, IP, geography, aggregation, or retention — is entirely a matter for the endpoint you operate.
 
 ## Usage
 
