@@ -91,6 +91,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `analytics` | `Object` | No | — | Opt-in search analytics — emit query, click, and zero-result events to your own endpoint (see [Analytics](#analytics)) |
 | `semanticSearch` | `Boolean` | No | `false` | Enable hybrid (keyword + vector) search against an embedding field (see [Semantic search](#semantic-search)) |
 | `embeddingFieldName` | `String` | No | `'embedding'` | Name of the collection's embedding field, used when `semanticSearch` is enabled |
+| `facets` | `Array` | No | `[]` | Reader-facing filter controls for faceted fields (see [Filters](#filters)) |
 
 ### Search Fields Configuration
 
@@ -196,6 +197,35 @@ window.__MP_SEARCH_CONFIG__ = {
 ```
 
 > **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
+
+## Filters
+
+Reader-facing **facets** let readers narrow results by a faceted field such as tags or authors. They are **opt-in**: with no `facets` config the UI and queries are unchanged.
+
+Add a `facets` array, one entry per field you want to expose. Each field must be `facet: true` in the collection schema (the defaults already facet `tags`, `tags.name`, `tags.slug`, and `authors`).
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    facets: [
+        { field: 'tags.name', label: 'Topics',  limit: 10 },
+        { field: 'authors',   label: 'Authors', limit: 5 }
+    ]
+};
+```
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `field` | `String` | Yes | A faceted collection field (e.g. `tags.name`, `authors`) |
+| `label` | `String` | No | Heading shown above the field's chips (defaults to the field name) |
+| `limit` | `Number` | No | Maximum number of values shown for the field (defaults to 10) |
+
+Behaviour:
+
+- When a query is active, each configured field renders as a row of selectable chips with a live result count. Chips are `<button>` elements with `aria-pressed`, so they are keyboard-focusable and toggle with Enter/Space.
+- Selecting one or more values filters the results and refreshes the counts. Values within a field are OR-ed; different fields are AND-ed together.
+- Selections can be cleared individually (toggling a chip off) or all at once via the **Clear filters** button.
+- A publisher-provided `typesenseSearchParams.filter_by` is **preserved**: facet selections are AND-ed with it rather than overwriting it.
 
 ## Semantic search
 
@@ -353,6 +383,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `ariaResultsLabel` | "Search results" | ARIA label for results region |
 | `ariaArticleExcerpt` | "Article excerpt" | ARIA label for article excerpts |
 | `ariaModalLabel` | "Search" | ARIA label for modal |
+| `ariaFacetsLabel` | "Filters" | ARIA label for the facet filter group |
+| `clearFiltersLabel` | "Clear filters" | Label for the button that clears active facet filters |
 | `untitledPost` | "Untitled" | Fallback for posts without titles |
 
 ### Example Translations
