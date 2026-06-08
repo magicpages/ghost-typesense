@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-06-08
+
+A major release that turns the search UI from a single modal into a configurable
+search platform: selectable layouts, semantic search, reader-facing facets,
+curated suggestions, opt-in analytics, gated-content indexing, a grid template,
+and a full test + playground harness. The version bump is major because the
+default search experience changes visibly out of the box (see Changed).
+
+### Added
+
+#### Selectable UI layouts (`uiStyle`)
+- **Three interchangeable layouts**, chosen with `uiStyle`, all sharing the same
+  engine, query, theming, keyboard shortcuts, analytics, facets, and i18n:
+  - `'modal'` *(default)* — the centered modal, now with rich result rows.
+  - `'palette'` — a keyboard-first command palette (⌘K idiom) with grouped
+    Posts / Tags / Authors buckets, a localStorage-backed "Recent searches"
+    list, and a footer command bar.
+  - `'discovery'` — a two-pane content explorer: results list, a live preview
+    pane (feature image, full excerpt, date, tags, author, "Read post" link),
+    and a facet rail. Shows a welcoming prompt before the first query.
+- **One-script install, no wasted bytes.** The install is unchanged — a single
+  `<script src=".../search.min.js">`. The core bundle carries only the engine
+  and the default modal; `palette` and `discovery` lazily load their own chunk
+  (`palette.min.js` / `discovery.min.js`, each with its own CSS) from the same
+  directory on first use. Modal-only sites download nothing extra. A failed
+  chunk load falls back to the built-in modal so search keeps working.
+- **Uniform keyboard navigation** across all layouts: `/` and `Cmd/Ctrl+K` to
+  open, `↑/↓` to move the selection (the discovery preview follows live),
+  `Home`/`End`, `PageUp`/`PageDown`, `Enter` to open, `Esc` to close.
+
+#### Semantic (hybrid) search
+- **`semanticSearch` config option**: opt-in hybrid keyword + vector search
+  against a collection embedding field, so a search for "growing tomatoes" can
+  surface a post about "vegetable garden tips" without overlapping words.
+- **`embeddingFieldName`** (default `'embedding'`) to name the vector field.
+- **Keyword-favoring defaults** keep hybrid results relevant: `semanticAlpha`
+  (default `0.2`) biases rank fusion toward keyword matches, and
+  `semanticDistanceThreshold` (default `0.8`) drops distant vector-only matches.
+  Both are configurable.
+- Collection-schema support for an auto-embedding field on the indexing side
+  (built-in models, Typesense v0.25.0+).
+
+#### Reader-facing facets
+- **`facets` config option**: opt-in filter controls for faceted fields (e.g.
+  tags, authors). Facet counts update as filters are applied; the UI and queries
+  are unchanged when `facets` is unset.
+
+#### Search suggestions
+- **Curated and dynamic suggestions**: `pinnedSearches` (publisher-curated,
+  always shown first), `commonSearches` (static fallback terms), and
+  `suggestionsUrl` (fetched on open for dynamic suggestions).
+
+#### Searchable fields
+- **`searchAuthors`** (opt-in, default off): make author names matchable by a
+  keyword query, so searching a contributor's name finds their posts.
+
+#### Result templates
+- **`template: 'grid'`** within the modal layout: a responsive card grid
+  (feature image, title, excerpt, up to three tags) alongside the default
+  `'list'`. Posts without a feature image get a styled placeholder.
+
+#### Opt-in analytics
+- **`analytics` config option**: emit `search`, `click`, and `zero_result`
+  events (with their queries) to your own endpoint via `navigator.sendBeacon`.
+  Privacy-conscious and fully opt-in.
+
+#### Members-only content indexing
+- **`indexGatedContent`** (collection/webhook config): index members-only and
+  paid posts as **redacted** documents — discoverable by title, excerpt, URL,
+  tags, and feature image, with a `visibility` field — without ever reading or
+  exposing the protected body. The search UI marks these with a "members only"
+  badge, turning gated posts into discoverable lead magnets. Off by default.
+
+#### Tooling
+- **Vitest + jsdom test suite** for the search UI.
+- **Dev playground** (`apps/playground`) for driving the widget and every
+  feature offline against a mocked Typesense, with a real Docker Typesense
+  option for semantic search.
+- **CI workflow**, Dependabot, and a `typecheck` task across the monorepo.
+
+### Changed
+- **The default modal now renders rich result rows** instead of a plain
+  title + excerpt list: a feature-image thumbnail (with a tinted first-letter
+  fallback), highlighted title, one-line excerpt, and a metadata line
+  (date · primary tag · author). This is the visible default change behind the
+  major version bump — no config change is required, but existing sites will see
+  the upgraded rows automatically.
+- **Default `include_fields`** now also requests `feature_image`, `authors`,
+  `tags`, `published_at`, and `visibility` so the richer rows and layouts have
+  the data they need.
+
+### Fixed
+- **`/` keystroke swallowed in the palette/discovery search input**: across the
+  shadow boundary a document-level listener sees the event target retargeted to
+  the host element, so the input-focus guard couldn't tell focus was in the
+  field and the `/` opener intercepted the keystroke. Open shortcuts are now
+  gated on the open state, so the active surface owns the keyboard while open.
+- **Hardened layout chunk loading**: concurrent loads share a single in-flight
+  request instead of injecting duplicate `<script>` tags, and a layout that
+  loads but fails to mount cleanly falls back to the modal.
+- **Core-script URL detection** tightened to a path boundary so it no longer
+  matches names like `presearch.min.js`.
+- Gated-post bodies are never present in the index (redaction verified end to
+  end), and `visibility` is preserved through `include_fields`.
+
 ## [1.12.0] - 2026-04-07
 
 ### Added
