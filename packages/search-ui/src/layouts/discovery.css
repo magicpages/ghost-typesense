@@ -428,7 +428,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  object-fit: unset;
   background: color-mix(in srgb, var(--accent-color) 10%, var(--color-surface));
   border: 1px solid var(--color-border);
   color: color-mix(in srgb, var(--accent-color) 70%, var(--color-text));

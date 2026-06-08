@@ -182,12 +182,16 @@ export default function createPaletteLayout(ctx) {
     if (!item) return;
 
     if (item.kind === 'recent' || item.kind === 'tag' || item.kind === 'author') {
+      // Ignore malformed rows so we never type the literal "undefined" into the
+      // input or issue a query for it.
+      const value = item.value;
+      if (typeof value !== 'string' || value.trim() === '') return;
       if (refs.input) {
-        refs.input.value = item.value;
+        refs.input.value = value;
         refs.input.focus();
       }
-      currentQuery = item.value;
-      ctx.search(item.value);
+      currentQuery = value;
+      ctx.search(value);
       return;
     }
 

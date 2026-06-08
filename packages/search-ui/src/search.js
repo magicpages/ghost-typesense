@@ -21,7 +21,9 @@ import Typesense from 'typesense';
             }
             const scripts = document.getElementsByTagName('script');
             for (let i = scripts.length - 1; i >= 0; i--) {
-                if (scripts[i].src && /search(\.min)?\.js(\?|$)/.test(scripts[i].src)) {
+                // Match the core filename only — anchored to a path boundary so
+                // it doesn't also match e.g. "presearch.min.js".
+                if (scripts[i].src && /(^|\/)search(\.min)?\.js(\?|$)/.test(scripts[i].src)) {
                     return scripts[i].src;
                 }
             }
@@ -737,6 +739,20 @@ import Typesense from 'typesense';
         // handleKeydown; here we only own open (Cmd/Ctrl+K, /) and close (Esc).
         initGlobalShortcuts() {
             document.addEventListener('keydown', (e) => {
+                // When the search is already open, the active surface owns the
+                // keyboard. Don't re-fire the open shortcuts — and critically,
+                // don't let the "/" opener swallow a slash the reader is trying
+                // to type into the search input. Across a shadow boundary the
+                // document sees e.target retargeted to the host element (not the
+                // inner <input>), so the tagName guard alone can't tell that
+                // focus is in the field; gating on isModalOpen does.
+                if (this.isModalOpen) {
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        this.closeModal();
+                    }
+                    return;
+                }
                 if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
                     e.preventDefault();
                     this.openModal();
@@ -745,10 +761,6 @@ import Typesense from 'typesense';
                     e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                     e.preventDefault();
                     this.openModal();
-                }
-                if (e.key === 'Escape' && this.isModalOpen) {
-                    e.preventDefault();
-                    this.closeModal();
                 }
             });
 
@@ -1530,9 +1542,22 @@ import Typesense from 'typesense';
 
         // Refined list row: a feature-image thumbnail (tinted first-letter
         // fallback when absent), highlighted title, one-line excerpt, and a
-        // metadata line (date · primary tag · author). Backwards-compatible:
-        // when called as renderListItem(title, excerpt[, isGated]) — as the
-        // tests do — it renders the simple title+excerpt row.
+        // metadata line (date · primary tag · author).
+        //
+        // Two call signatures are supported, distinguished at runtime by the
+        // type of the first argument:
+        //
+        //   renderListItem(title: string, excerpt?: string, isGated?: boolean)
+        //     — the simple title+excerpt row. Used by the unit tests, which
+        //       assert on this stable shape.
+        //   renderListItem(hit: object, title: string, excerpt: string, isGated: boolean)
+        //     — the rich row. `hit` is the Typesense hit (its `.document`
+        //       supplies feature_image/tags/authors/etc.); `title`/`excerpt`
+        //       are the highlighted HTML. `isGated` arrives as the 4th argument
+        //       (read via `arguments[3]`) so the two signatures can share the
+        //       same three named parameters.
+        //
+        // Prefer calling the rich signature explicitly with all four arguments.
         renderListItem(hitOrTitle, excerptOrUndefined, isGatedArg) {
             // Legacy/string-call signature (tests): (title, excerpt, isGated)
             if (typeof hitOrTitle === 'string') {

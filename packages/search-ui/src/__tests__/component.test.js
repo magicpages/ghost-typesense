@@ -322,5 +322,6 @@ describe('result templates', () => {
     expect(listFields).toContain('authors');
     const gridFields = mountWithConfig({ template: 'grid' }).getSearchParameters().include_fields;
     expect(gridFields).toContain('feature_image');
+    expect(gridFields).toContain('authors');
   });
 });
