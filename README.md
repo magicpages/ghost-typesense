@@ -43,6 +43,8 @@ If you're using a managed host like Ghost(Pro), add this to your site's code inj
 
 You can also self-host the `search.min.js` and add that URL instead of `https://unpkg.com/@magicpages/ghost-typesense-search-ui/dist/search.min.js`.
 
+> **Self-hosting note:** the default modal layout needs only `search.min.js`. If you opt into the `palette` or `discovery` layout (see below), the widget lazily loads `palette.min.js` / `discovery.min.js` from the **same directory** as `search.min.js`, so deploy those chunks alongside it. unpkg and the npm package already include them.
+
 For either of these options, you'll then need to add a code injection into your site's header to configure the search UI:
 
 ```
@@ -59,6 +61,25 @@ For either of these options, you'll then need to add a code injection into your 
   };
 </script>
 ```
+
+#### Choosing a UI layout
+
+The widget ships three interchangeable layouts, selected with `uiStyle`:
+
+- `'modal'` *(default)* — a centered modal with rich result rows; supports a `list` or `grid` template.
+- `'palette'` — a keyboard-first command palette (⌘K idiom) with grouped results and recent searches.
+- `'discovery'` — a two-pane content explorer with a live preview and a facet rail.
+
+```html
+<script>
+  window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    uiStyle: 'discovery'  // 'modal' (default) | 'palette' | 'discovery'
+  };
+</script>
+```
+
+The install line is identical for every layout — one `<script>` tag. Only the layout you choose is downloaded by the reader. See the [search-ui README](packages/search-ui/README.md#ui-layouts) for the full layout, keyboard, theming, facet, and i18n reference.
 
 ### 3. Initial Content Sync
 
@@ -165,7 +186,9 @@ ghost-typesense sync --config ghost-typesense.config.json
 
 ### 2. Enable hybrid querying in the search UI
 
-Set `semanticSearch: true` in your search config — see the [search-ui semantic search docs](packages/search-ui/README.md#semantic-search).
+Set `semanticSearch: true` in your search config — see the [search-ui semantic search docs](packages/search-ui/README.md#semantic-search). By default the widget biases hybrid results toward keyword matches (`semanticAlpha: 0.2`) and drops distant vector-only matches (`semanticDistanceThreshold: 0.8`), both tunable — see [Keeping hybrid results relevant](packages/search-ui/README.md#keeping-hybrid-results-relevant).
+
+To make **author names** matchable as a keyword query (e.g. searching a contributor's name), set `searchAuthors: true` — see [Searchable fields](packages/search-ui/README.md#searchable-fields).
 
 ### Requirements and tradeoffs
 

@@ -161,7 +161,55 @@ import Typesense from 'typesense';
                 clearFiltersLabel: 'Clear filters',
                 membersLabel: 'Members only',
                 ariaMembersLabel: 'Members-only content',
-                untitledPost: 'Untitled'
+                untitledPost: 'Untitled',
+
+                // Relative dates for the refined result rows. {n} is substituted.
+                relativeNow: 'just now',
+                relativeMinutes: '{n}m ago',
+                relativeHours: '{n}h ago',
+                relativeDays: '{n}d ago',
+                relativeMonths: '{n}mo ago',
+                relativeYears: '{n}y ago',
+
+                // Palette layout (uiStyle: 'palette'). {n}/{q} placeholders are
+                // substituted by the layout.
+                paletteRecentGroup: 'Recent searches',
+                paletteRecentLabel: 'recent',
+                palettePostsGroup: 'Posts',
+                paletteTagsGroup: 'Tags',
+                paletteAuthorsGroup: 'Authors',
+                paletteEmptyTitle: 'Start typing to search',
+                paletteEmptySub: 'Posts, tags, and authors — fast.',
+                paletteNoResultsTitle: 'No results for “{q}”',
+                paletteNoResultsSub: 'Try a different term.',
+                paletteSearching: 'Searching…',
+                paletteResultCountOne: '{n} result',
+                paletteResultCountOther: '{n} results',
+                paletteHintNavigate: 'navigate',
+                paletteHintOpen: 'open',
+                paletteHintNewTab: 'new tab',
+                paletteHintClose: 'close',
+                paletteRelativeNow: 'just now',
+                paletteRelativeMinutes: '{n}m ago',
+                paletteRelativeHours: '{n}h ago',
+                paletteRelativeDays: '{n}d ago',
+                paletteRelativeMonths: '{n}mo ago',
+                paletteRelativeYears: '{n}y ago',
+
+                // Discovery layout (uiStyle: 'discovery').
+                facetTopicsLabel: 'Topics',
+                facetAuthorsLabel: 'Authors',
+                byLabel: 'By',
+                readPostLabel: 'Read post',
+                resultLabel: 'result',
+                resultsLabel: 'results',
+                discoveryPreviewLabel: 'Result preview',
+                discoverySelectPrompt: 'Select a result to preview it.',
+                discoveryNoSelection: 'No post selected.',
+                discoveryEmptyTitle: 'Search the archive',
+                discoveryEmptyHint: 'Start typing to explore posts. Use ↑ ↓ to move and ↵ to open.',
+                discoveryNoFilters: 'No filters available.',
+                discoveryGatedNotice: 'This post is available to members. Only the public teaser is shown here.'
             };
         }
 
@@ -219,7 +267,10 @@ import Typesense from 'typesense';
             // Store locale for future use
             this.locale = this.config.locale || 'en';
 
-            this.init();
+            // init() is async (an alternative layout lazily loads its chunk);
+            // expose the promise so openModal can wait for the surface to be
+            // ready before showing it.
+            this.initReady = this.init();
             isInitialized = true;
         }
 
@@ -503,6 +554,19 @@ import Typesense from 'typesense';
                     this.activeLayout.cacheElements(this.shadowRoot);
                     this.activeLayout.setTheme(this.isDarkTheme());
                     this.activeLayout.bindEvents();
+                    // Deliver in-surface keydowns (arrows, Enter, Home/End,
+                    // PageUp/Down) to the layout. bindEvents only wires the
+                    // input + clicks; navigation is owned here so every layout
+                    // gets it. The listener sits on the shadow root so it fires
+                    // while focus is in the layout's search input. The layout
+                    // returns true when it consumes the key.
+                    if (typeof this.activeLayout.handleKeydown === 'function') {
+                        this.shadowRoot.addEventListener('keydown', (e) => {
+                            if (!this.isModalOpen) return;
+                            const consumed = this.activeLayout.handleKeydown(e);
+                            if (consumed) e.stopPropagation();
+                        });
+                    }
                     this.initGlobalShortcuts();
                     this.setupHashHandling();
                     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -821,6 +885,14 @@ import Typesense from 'typesense';
         async openModal() {
             if (this.isModalOpen) return;
 
+            // The surface may still be initializing (an alternative layout
+            // lazily loads its chunk). Wait for it so we never open against a
+            // half-built widget.
+            if (this.initReady) {
+                try { await this.initReady; } catch { /* fall through to modal */ }
+            }
+            if (this.isModalOpen) return;
+
             // Store active element for focus restoration
             this.activeElement = document.activeElement;
             this.isModalOpen = true;
@@ -829,12 +901,12 @@ import Typesense from 'typesense';
             if (this.activeLayout) {
                 this.activeLayout.onOpen();
                 this.activeLayout.focusInput();
-            } else {
+            } else if (this.modal) {
                 // Show modal
                 this.modal.classList.remove(`${CSS_PREFIX}-hidden`);
                 // Focus search input
                 setTimeout(() => {
-                    this.searchInput.focus();
+                    this.searchInput && this.searchInput.focus();
                 }, 50);
             }
 
@@ -1062,7 +1134,7 @@ import Typesense from 'typesense';
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             ${this.config.template === 'grid'
                                 ? this.renderGridCard(hit, title, excerpt, isGated)
-                                : this.renderListItem(title, excerpt, isGated)}
+                                : this.renderListItem(hit, title, excerpt, isGated)}
                         </a>
                     `;
                 }).join('');
@@ -1104,13 +1176,23 @@ import Typesense from 'typesense';
                 }
             });
 
+            // Opt-in: make author names matchable by keyword. Off by default
+            // (matching the historical behaviour where typing an author name
+            // found nothing); set config.searchAuthors = true to include the
+            // `authors` field in query_by at a low weight. Publishers can also
+            // add `authors` to searchFields directly for full control.
+            if (this.config.searchAuthors && !searchFields.includes('authors')) {
+                searchFields.push('authors');
+                weights.push(1);
+            }
+
             // Default search parameters
             const defaultParams = {
                 query_by: searchFields.join(','),
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
                 highlight_affix_num_tokens: 30,
-                include_fields: 'id,title,url,excerpt,plaintext,published_at,tags,visibility',
+                include_fields: 'id,title,url,excerpt,plaintext,published_at,tags,authors,feature_image,visibility',
                 typo_tolerance: false,
                 num_typos: 0,
                 prefix: true,
@@ -1179,6 +1261,25 @@ import Typesense from 'typesense';
                 }
             }
 
+            // Alternative layouts declare the extra fields they render (e.g.
+            // discovery needs feature_image + authors for its preview pane);
+            // union them into include_fields so the layout actually receives
+            // that data. Without this, the preview falls back to a placeholder.
+            if (this.activeLayout && typeof this.activeLayout.requiredFields === 'function') {
+                const needed = this.activeLayout.requiredFields() || [];
+                if (needed.length) {
+                    const fields = String(mergedParams.include_fields || '')
+                        .split(',')
+                        .map(f => f.trim())
+                        .filter(Boolean);
+                    let changed = false;
+                    for (const f of needed) {
+                        if (f && !fields.includes(f)) { fields.push(f); changed = true; }
+                    }
+                    if (changed) mergedParams.include_fields = fields.join(',');
+                }
+            }
+
             // Semantic (hybrid) search: when enabled, append the embedding
             // field to `query_by`. Typesense then fuses keyword and vector
             // relevance, auto-embedding the query against the field's model.
@@ -1204,6 +1305,24 @@ import Typesense from 'typesense';
                             .filter(Boolean);
                         weights.push('1');
                         mergedParams.query_by_weights = weights.join(',');
+                    }
+
+                    // Bias hybrid ranking toward keyword matches so a strong
+                    // textual hit (e.g. an author name) outranks merely
+                    // vector-near posts, and drop far semantic-only matches.
+                    // alpha is the vector weight in rank fusion (lower = more
+                    // keyword-dominant; Typesense default 0.3); distance_threshold
+                    // excludes vector matches beyond that cosine distance. Both
+                    // are overridable via config.semanticAlpha /
+                    // config.semanticDistanceThreshold, and a host-provided
+                    // vector_query wins outright.
+                    if (!mergedParams.vector_query) {
+                        const alpha = typeof this.config.semanticAlpha === 'number'
+                            ? this.config.semanticAlpha : 0.2;
+                        const threshold = typeof this.config.semanticDistanceThreshold === 'number'
+                            ? this.config.semanticDistanceThreshold : 0.8;
+                        mergedParams.vector_query =
+                            `${embeddingField}:([], alpha: ${alpha}, distance_threshold: ${threshold})`;
                     }
                 }
             }
@@ -1372,13 +1491,72 @@ import Typesense from 'typesense';
                     </span>`;
         }
 
-        // Default list layout: title + excerpt. `title` and `excerpt` already
-        // contain (Typesense-escaped) highlight markup.
-        renderListItem(title, excerpt, isGated) {
+        // Human-relative date from an epoch-ms timestamp.
+        relativeDate(epochMs) {
+            if (epochMs == null) return '';
+            const diff = Date.now() - Number(epochMs);
+            if (Number.isNaN(diff)) return '';
+            const day = Math.round(diff / 86400000);
+            if (day > 365) return this.t('relativeYears').replace('{n}', Math.round(day / 365));
+            if (day > 30) return this.t('relativeMonths').replace('{n}', Math.round(day / 30));
+            if (day >= 1) return this.t('relativeDays').replace('{n}', day);
+            const hr = Math.round(diff / 3600000);
+            if (hr >= 1) return this.t('relativeHours').replace('{n}', hr);
+            const min = Math.round(diff / 60000);
+            if (min >= 1) return this.t('relativeMinutes').replace('{n}', min);
+            return this.t('relativeNow');
+        }
+
+        // Refined list row: a feature-image thumbnail (tinted first-letter
+        // fallback when absent), highlighted title, one-line excerpt, and a
+        // metadata line (date · primary tag · author). Backwards-compatible:
+        // when called as renderListItem(title, excerpt[, isGated]) — as the
+        // tests do — it renders the simple title+excerpt row.
+        renderListItem(hitOrTitle, excerptOrUndefined, isGatedArg) {
+            // Legacy/string-call signature (tests): (title, excerpt, isGated)
+            if (typeof hitOrTitle === 'string') {
+                const title = hitOrTitle;
+                const excerpt = excerptOrUndefined || '';
+                return `
+                    <article class="${CSS_PREFIX}-result-item" role="article">
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGatedArg)}</h3>
+                        <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
+                    </article>
+                `;
+            }
+
+            // Rich-call signature: (hit, title, excerpt, isGated)
+            const hit = hitOrTitle;
+            const title = excerptOrUndefined;
+            const excerpt = isGatedArg;
+            const isGated = arguments[3];
+            const doc = hit.document || {};
+
+            const featureImage = doc.feature_image;
+            const letter = this.escapeHtmlAttr((doc.title || '?').trim().charAt(0).toUpperCase() || '?');
+            const thumb = featureImage
+                ? `<img class="${CSS_PREFIX}-row-thumb" src="${this.escapeHtmlAttr(featureImage)}" alt="" loading="lazy" />`
+                : `<span class="${CSS_PREFIX}-row-thumb ${CSS_PREFIX}-row-thumb-empty" aria-hidden="true">${letter}</span>`;
+
+            const metaParts = [];
+            const date = this.relativeDate(doc.published_at);
+            if (date) metaParts.push(`<span>${this.escapeHtmlAttr(date)}</span>`);
+            const primaryTag = Array.isArray(doc.tags) && doc.tags.length ? doc.tags[0] : '';
+            if (primaryTag) metaParts.push(`<span class="${CSS_PREFIX}-row-meta-tag">${this.escapeHtmlAttr(primaryTag)}</span>`);
+            const author = Array.isArray(doc.authors) && doc.authors.length ? doc.authors[0] : '';
+            if (author) metaParts.push(`<span>${this.escapeHtmlAttr(author)}</span>`);
+            const meta = metaParts.length
+                ? `<div class="${CSS_PREFIX}-row-meta">${metaParts.join(`<span class="${CSS_PREFIX}-row-meta-sep" aria-hidden="true">·</span>`)}</div>`
+                : '';
+
             return `
-                <article class="${CSS_PREFIX}-result-item" role="article">
-                    <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
-                    <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
+                <article class="${CSS_PREFIX}-result-item ${CSS_PREFIX}-row" role="article">
+                    ${thumb}
+                    <div class="${CSS_PREFIX}-row-body">
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
+                        <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
+                        ${meta}
+                    </div>
                 </article>
             `;
         }
