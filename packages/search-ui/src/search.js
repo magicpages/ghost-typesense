@@ -895,6 +895,20 @@ import Typesense from 'typesense';
                 }
             }
 
+            // The members-only badge keys off `visibility`, so keep it in the
+            // returned fields even if a host overrode include_fields. Harmless
+            // for public-only collections (the field is simply absent there).
+            {
+                const fields = String(mergedParams.include_fields || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (fields.length && !fields.includes('visibility')) {
+                    fields.push('visibility');
+                    mergedParams.include_fields = fields.join(',');
+                }
+            }
+
             // The grid template shows the post's feature image, so make sure it
             // is returned. Only added in grid mode, leaving the list/default
             // query's returned fields unchanged.

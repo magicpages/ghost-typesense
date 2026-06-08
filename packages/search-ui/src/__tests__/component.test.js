@@ -103,11 +103,25 @@ describe('getSearchParameters — analytics include_fields', () => {
     expect(fields).toContain('id');
   });
 
-  it('does not touch include_fields when analytics is disabled', () => {
+  it('does not add id to include_fields when analytics is disabled', () => {
     const el = mountWithConfig({
       typesenseSearchParams: { include_fields: 'title,url' }
     });
-    expect(el.getSearchParameters().include_fields).toBe('title,url');
+    expect(el.getSearchParameters().include_fields.split(',')).not.toContain('id');
+  });
+});
+
+describe('getSearchParameters — visibility include_fields', () => {
+  it('preserves visibility when a host overrides include_fields (for the gated badge)', () => {
+    const el = mountWithConfig({
+      typesenseSearchParams: { include_fields: 'title,url' }
+    });
+    expect(el.getSearchParameters().include_fields.split(',')).toContain('visibility');
+  });
+
+  it('keeps visibility in the default include_fields', () => {
+    const el = mountWithConfig();
+    expect(el.getSearchParameters().include_fields.split(',')).toContain('visibility');
   });
 });
 

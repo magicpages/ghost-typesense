@@ -123,11 +123,13 @@ function highlight(text, q) {
 // never returned — the same guarantee the real indexer provides.
 function toIndexedDoc(post) {
   const visibility = post.visibility || 'public';
-  const { plaintext, ...rest } = post;
+  const { plaintext, html, ...rest } = post;
   if (visibility === 'public') {
-    return { ...rest, plaintext, visibility };
+    return { ...rest, ...(html !== undefined ? { html } : {}), plaintext, visibility };
   }
-  return { ...rest, plaintext: post.excerpt || post.title || '', visibility };
+  // Mirror the core indexer: gated posts carry no body — empty html and
+  // excerpt-only plaintext.
+  return { ...rest, html: '', plaintext: post.excerpt || post.title || '', visibility };
 }
 
 export function mockSearchResponse(params = {}) {
