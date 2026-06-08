@@ -199,3 +199,70 @@ describe('facet rendering', () => {
     expect(el.facetsContainer.classList.contains('mp-search-hidden')).toBe(true);
   });
 });
+
+// Parse a markup string into an element for structural assertions.
+function parse(html) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+describe('result templates', () => {
+  it('renders the list item with a title and excerpt (default layout)', () => {
+    const el = mountWithConfig();
+    const dom = parse(el.renderListItem('My title', 'An excerpt'));
+
+    expect(dom.querySelector('.mp-search-result-title').textContent).toContain('My title');
+    expect(dom.querySelector('.mp-search-result-excerpt').textContent).toContain('An excerpt');
+    // No card-specific markup in list mode.
+    expect(dom.querySelector('.mp-search-card-image')).toBeNull();
+  });
+
+  it('renders a grid card with image, title, excerpt and tags', () => {
+    const el = mountWithConfig({ template: 'grid' });
+    const hit = {
+      document: {
+        id: 'p1',
+        title: 'Tomatoes',
+        feature_image: 'https://cdn.example.com/t.jpg',
+        tags: ['Garden', 'How To', 'Spring', 'Extra']
+      }
+    };
+    const dom = parse(el.renderGridCard(hit, 'Tomatoes', 'Grow them'));
+
+    const img = dom.querySelector('img.mp-search-card-image');
+    expect(img.getAttribute('src')).toBe('https://cdn.example.com/t.jpg');
+    expect(img.getAttribute('alt')).toBe(''); // decorative; link carries the label
+    expect(dom.querySelector('.mp-search-result-title').textContent).toContain('Tomatoes');
+    expect(dom.querySelector('.mp-search-result-excerpt').textContent).toContain('Grow them');
+
+    // Tags are capped at three.
+    const tags = dom.querySelectorAll('.mp-search-card-tag');
+    expect([...tags].map(t => t.textContent)).toEqual(['Garden', 'How To', 'Spring']);
+  });
+
+  it('shows a placeholder instead of a broken image when feature_image is absent', () => {
+    const el = mountWithConfig({ template: 'grid' });
+    const dom = parse(el.renderGridCard({ document: { id: 'p1', tags: [] } }, 'Untitled', ''));
+
+    expect(dom.querySelector('img.mp-search-card-image')).toBeNull();
+    expect(dom.querySelector('.mp-search-card-image-empty')).not.toBeNull();
+  });
+
+  it('escapes a malicious feature_image url', () => {
+    const el = mountWithConfig({ template: 'grid' });
+    const html = el.renderGridCard(
+      { document: { id: 'p1', feature_image: '"><script>alert(1)</script>', tags: [] } },
+      'T',
+      ''
+    );
+    expect(html).not.toContain('<script>');
+  });
+
+  it('adds feature_image to include_fields only in grid mode', () => {
+    expect(mountWithConfig({ template: 'grid' }).getSearchParameters().include_fields)
+      .toContain('feature_image');
+    expect(mountWithConfig().getSearchParameters().include_fields)
+      .not.toContain('feature_image');
+  });
+});

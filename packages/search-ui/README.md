@@ -94,6 +94,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `semanticSearch` | `Boolean` | No | `false` | Enable hybrid (keyword + vector) search against an embedding field (see [Semantic search](#semantic-search)) |
 | `embeddingFieldName` | `String` | No | `'embedding'` | Name of the collection's embedding field, used when `semanticSearch` is enabled |
 | `facets` | `Array` | No | `[]` | Reader-facing filter controls for faceted fields (see [Filters](#filters)) |
+| `template` | `String` | No | `'list'` | Result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
 
 ### Search Fields Configuration
 
@@ -233,6 +234,22 @@ The endpoint may return either a bare array of strings or an object with a `sugg
 ```
 
 The fetch is **fail-silent**: if the request errors or returns a non-success status, the widget falls back to `pinnedSearches` + `commonSearches` with no visible error, and does not retry that URL for the rest of the session. The widget is backend-agnostic — it only consumes the URL and does not define where the suggestions come from.
+
+## Result templates
+
+Results render as a vertical **list** by default. Image-led publications can switch to a **grid** of cards that feature each post's image:
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    template: 'grid' // 'list' (default) | 'grid'
+};
+```
+
+- `'list'` — the default title-and-excerpt rows.
+- `'grid'` — responsive cards (multi-column on desktop, single column on mobile) showing the post's `feature_image`, title, excerpt, and up to three tags. Posts without a feature image get a styled placeholder rather than a broken image.
+
+Both layouts use the same results, highlighting, keyboard navigation, and click handling — only the markup differs. The grid layout adds `feature_image` to the requested fields; the list layout's query is unchanged.
 
 ## Filters
 

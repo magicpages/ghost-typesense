@@ -135,7 +135,11 @@ import Typesense from 'typesense';
                 ...defaultConfig,
                 commonSearches: defaultConfig.commonSearches || [],
                 pinnedSearches: defaultConfig.pinnedSearches || [],
-                facets: defaultConfig.facets || []
+                facets: defaultConfig.facets || [],
+                // Result layout: 'list' (default) or 'grid'. Normalise unknown
+                // values to 'list' so the default behaviour can't be changed by
+                // a typo.
+                template: defaultConfig.template === 'grid' ? 'grid' : 'list'
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -782,21 +786,25 @@ import Typesense from 'typesense';
                         ? this.toRelativeUrl(hit.document.url)
                         : (hit.document.url || '#');
 
+                    // The link wrapper (class + data attributes + aria-label) is
+                    // shared by both templates, so keyboard navigation, click
+                    // handling, and analytics behave identically — only the
+                    // inner article markup differs.
                     return `
                         <a href="${resultUrl}"
                             class="${CSS_PREFIX}-result-link"
                             data-result-id="${this.escapeHtmlAttr(hit.document.id)}"
                             data-result-position="${index}"
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
-                            <article class="${CSS_PREFIX}-result-item" role="article">
-                                <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
-                                <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
-                            </article>
+                            ${this.config.template === 'grid'
+                                ? this.renderGridCard(hit, title, excerpt)
+                                : this.renderListItem(title, excerpt)}
                         </a>
                     `;
                 }).join('');
 
                 this.hitsList.innerHTML = resultsHtml;
+                this.hitsList.classList.toggle(`${CSS_PREFIX}-grid`, this.config.template === 'grid');
                 this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             } catch (error) {
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
@@ -875,6 +883,20 @@ import Typesense from 'typesense';
                     .filter(Boolean);
                 if (!fields.includes('id')) {
                     fields.unshift('id');
+                    mergedParams.include_fields = fields.join(',');
+                }
+            }
+
+            // The grid template shows the post's feature image, so make sure it
+            // is returned. Only added in grid mode, leaving the list/default
+            // query's returned fields unchanged.
+            if (this.config.template === 'grid') {
+                const fields = String(mergedParams.include_fields || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (!fields.includes('feature_image')) {
+                    fields.push('feature_image');
                     mergedParams.include_fields = fields.join(',');
                 }
             }
@@ -1050,6 +1072,46 @@ import Typesense from 'typesense';
             if (query) {
                 this.handleSearch(query);
             }
+        }
+
+        // Default list layout: title + excerpt. `title` and `excerpt` already
+        // contain (Typesense-escaped) highlight markup.
+        renderListItem(title, excerpt) {
+            return `
+                <article class="${CSS_PREFIX}-result-item" role="article">
+                    <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
+                    <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
+                </article>
+            `;
+        }
+
+        // Grid (card) layout: feature image, title, excerpt, and tags. The
+        // image is decorative (the link already carries the title via
+        // aria-label); when a post has no feature_image a styled placeholder is
+        // shown instead of a broken image.
+        renderGridCard(hit, title, excerpt) {
+            const featureImage = hit.document.feature_image;
+            const imageHtml = featureImage
+                ? `<img class="${CSS_PREFIX}-card-image" src="${this.escapeHtmlAttr(featureImage)}" alt="" loading="lazy" />`
+                : `<div class="${CSS_PREFIX}-card-image ${CSS_PREFIX}-card-image-empty" aria-hidden="true"></div>`;
+
+            const tags = Array.isArray(hit.document.tags) ? hit.document.tags.slice(0, 3) : [];
+            const tagsHtml = tags.length
+                ? `<div class="${CSS_PREFIX}-card-tags">${tags
+                    .map(tag => `<span class="${CSS_PREFIX}-card-tag">${this.escapeHtmlAttr(tag)}</span>`)
+                    .join('')}</div>`
+                : '';
+
+            return `
+                <article class="${CSS_PREFIX}-result-item ${CSS_PREFIX}-card" role="article">
+                    ${imageHtml}
+                    <div class="${CSS_PREFIX}-card-body">
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
+                        <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
+                        ${tagsHtml}
+                    </div>
+                </article>
+            `;
         }
 
         handleKeydown(e) {
