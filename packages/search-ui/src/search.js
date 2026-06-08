@@ -4,6 +4,64 @@ import Typesense from 'typesense';
     let isInitialized = false;
     let observer = null;
 
+    // Alternative UI layouts (uiStyle) are loaded ON DEMAND, not bundled into
+    // the core. 'modal' (default) is the built-in centered modal handled inline
+    // below — a modal-only site downloads only this core script. When 'palette'
+    // or 'discovery' is selected, the core fetches that layout's separate chunk
+    // (palette.min.js / discovery.min.js) from its own directory, so a reader
+    // never downloads the layouts they didn't choose.
+    const ALT_LAYOUTS = ['palette', 'discovery'];
+
+    // Capture the core script's own URL synchronously at load, so on-demand
+    // layout chunks can be resolved relative to it (same CDN directory).
+    const SELF_URL = (function () {
+        try {
+            if (document.currentScript && document.currentScript.src) {
+                return document.currentScript.src;
+            }
+            const scripts = document.getElementsByTagName('script');
+            for (let i = scripts.length - 1; i >= 0; i--) {
+                if (scripts[i].src && /search(\.min)?\.js(\?|$)/.test(scripts[i].src)) {
+                    return scripts[i].src;
+                }
+            }
+        } catch {
+            // ignore — falls back to a relative chunk path below
+        }
+        return '';
+    })();
+
+    // Layout chunks register their factory here when they finish loading.
+    const layoutRegistry = {};
+    window.__mpRegisterSearchLayout = function (id, factory) {
+        layoutRegistry[id] = factory;
+    };
+
+    // Resolve a layout chunk URL next to the core script.
+    function layoutChunkUrl(id) {
+        const file = `${id}.min.js`;
+        if (!SELF_URL) return file;
+        return SELF_URL.replace(/[^/]+(\?.*)?$/, file);
+    }
+
+    // Load (once) and return the factory for an alternative layout. Injects a
+    // classic <script> for the chunk — no module system needed, so the core's
+    // own classic-script integration is unchanged.
+    function loadLayoutFactory(id) {
+        if (layoutRegistry[id]) return Promise.resolve(layoutRegistry[id]);
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = layoutChunkUrl(id);
+            script.async = true;
+            script.onload = () => {
+                if (layoutRegistry[id]) resolve(layoutRegistry[id]);
+                else reject(new Error(`layout chunk "${id}" loaded but did not register`));
+            };
+            script.onerror = () => reject(new Error(`failed to load layout chunk "${id}"`));
+            document.head.appendChild(script);
+        });
+    }
+
     function cleanupGhostSearch() {
         // Only cleanup after we've initialized
         if (!isInitialized) return;
@@ -141,7 +199,11 @@ import Typesense from 'typesense';
                 // Result layout: 'list' (default) or 'grid'. Normalise unknown
                 // values to 'list' so the default behaviour can't be changed by
                 // a typo.
-                template: defaultConfig.template === 'grid' ? 'grid' : 'list'
+                template: defaultConfig.template === 'grid' ? 'grid' : 'list',
+                // Overall UI layout: 'modal' (default, the built-in centered
+                // modal) or an alternative layout loaded on demand ('palette',
+                // 'discovery'). Unknown values fall back to 'modal'.
+                uiStyle: ALT_LAYOUTS.includes(defaultConfig.uiStyle) ? defaultConfig.uiStyle : 'modal'
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -330,7 +392,128 @@ import Typesense from 'typesense';
             this.attachCommonSearchListeners();
         }
 
+        // Whether dark mode is active, from config.theme + OS preference.
+        isDarkTheme() {
+            const preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            return this.config.theme === 'light' ? false : (this.config.theme === 'dark' || preferDark);
+        }
+
+        // Normalize a Typesense hit into the model the alternative layouts
+        // render, resolving highlight markup, gated status, and the URL once so
+        // layouts never re-implement that logic. The *Html fields are trusted
+        // (highlight snippet or escaped fallback); other fields are raw data the
+        // layout must escape itself.
+        normalizeHit(hit, index) {
+            const doc = hit.document || {};
+            const highlight = (fieldName, fallback) => {
+                if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
+                    return hit.highlight[fieldName].snippet || hit.highlight[fieldName].value || fallback;
+                }
+                return fallback;
+            };
+            const titleHtml = highlight('title', this.escapeHtmlAttr(doc.title)) || this.t('untitledPost');
+            let excerptHtml = highlight('excerpt', this.escapeHtmlAttr(doc.excerpt))
+                || highlight('plaintext', this.escapeHtmlAttr((doc.plaintext || '').substring(0, 160)))
+                || this.escapeHtmlAttr(doc.excerpt || (doc.plaintext || '').substring(0, 160) || '');
+            if (excerptHtml && excerptHtml.length > 200) excerptHtml = excerptHtml.substring(0, 200) + '...';
+
+            const url = this.config.transformToRelativeUrls
+                ? this.toRelativeUrl(doc.url)
+                : (doc.url || '#');
+            const isGated = !!doc.visibility && doc.visibility !== 'public';
+
+            return {
+                id: doc.id,
+                position: index,
+                url,
+                title: doc.title || '',
+                titleHtml,
+                ariaTitle: this.escapeHtmlAttr(String(titleHtml).replace(/<[^>]*>/g, '')),
+                excerptHtml,
+                isGated,
+                visibility: doc.visibility || 'public',
+                featureImage: doc.feature_image || null,
+                tags: Array.isArray(doc.tags) ? doc.tags : [],
+                authors: Array.isArray(doc.authors) ? doc.authors : [],
+                publishedAt: typeof doc.published_at === 'number' ? doc.published_at : null
+            };
+        }
+
+        // The contract an alternative layout receives. The layout touches the
+        // core only through this object — never the element internals — which
+        // is what keeps layout files isolated and parallel-safe.
+        buildLayoutContext() {
+            return {
+                prefix: CSS_PREFIX,
+                config: this.config,
+                shadowRoot: this.shadowRoot,
+                t: (k) => this.t(k),
+                escapeHtmlAttr: (v) => this.escapeHtmlAttr(v),
+                toRelativeUrl: (u) => this.toRelativeUrl(u),
+                getSuggestions: () => this.getSuggestions(),
+                getSelectedFacets: () => this.selectedFacets,
+                toggleFacet: (field, value) => {
+                    if (!this.selectedFacets[field]) this.selectedFacets[field] = new Set();
+                    const set = this.selectedFacets[field];
+                    if (set.has(value)) set.delete(value); else set.add(value);
+                },
+                clearFacets: () => { this.selectedFacets = {}; },
+                setFacetFilter: () => {},
+                search: (q) => this.handleSearch(q),
+                requery: () => this.rerunQueryForFacets(),
+                trackSearch: (q, c) => this.trackSearch(q, c),
+                trackClick: (id, pos) => this.trackClick(id, pos),
+                emitClick: (id, pos) => this.trackClick(id, pos),
+                close: () => this.closeModal(),
+                log: () => {}
+            };
+        }
+
         async init() {
+            // Alternative layout path: lazily load the selected layout's chunk
+            // (palette/discovery), then let it own markup, rendering, and
+            // in-surface keyboard nav. The core keeps query/analytics/lifecycle.
+            // A modal-only site never reaches this branch and never downloads a
+            // layout chunk.
+            if (this.config.uiStyle && this.config.uiStyle !== 'modal' && ALT_LAYOUTS.includes(this.config.uiStyle)) {
+                let factory;
+                try {
+                    factory = await loadLayoutFactory(this.config.uiStyle);
+                } catch (err) {
+                    // Chunk failed to load — fall back to the built-in modal so
+                    // search still works.
+                    this.config.uiStyle = 'modal';
+                }
+                if (factory) {
+                    this.ctx = this.buildLayoutContext();
+                    this.activeLayout = factory(this.ctx);
+                    // The layout injects its own CSS chunk; the core only injects
+                    // the shared base stylesheet (tokens + shared result/badge/
+                    // facet styles the layouts reuse).
+                    const styles = document.createElement('style');
+                    // eslint-disable-next-line no-undef
+                    styles.textContent = BUNDLED_CSS;
+                    this.shadowRoot.appendChild(styles);
+                    if (typeof this.activeLayout.injectStyles === 'function') {
+                        this.activeLayout.injectStyles(this.shadowRoot);
+                    }
+                    const host = document.createElement('div');
+                    host.innerHTML = this.activeLayout.buildMarkup();
+                    while (host.firstChild) this.shadowRoot.appendChild(host.firstChild);
+                    this.activeLayout.cacheElements(this.shadowRoot);
+                    this.activeLayout.setTheme(this.isDarkTheme());
+                    this.activeLayout.bindEvents();
+                    this.initGlobalShortcuts();
+                    this.setupHashHandling();
+                    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                        this.activeLayout.setTheme(this.isDarkTheme());
+                    });
+                    await this.handleInitialState();
+                    return;
+                }
+            }
+
+            // Default 'modal' path — unchanged.
             this.createShadowContent();
             this.cacheElements();
             this.updateTheme();
@@ -462,6 +645,35 @@ import Typesense from 'typesense';
             const preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const isDarkMode = this.config.theme === 'light' ? false : (this.config.theme === 'dark' || preferDark);
             this.modal.classList.toggle(`${CSS_PREFIX}-dark`, isDarkMode);
+        }
+
+        // Document-level global shortcuts + Ghost search-button openers, shared
+        // by every layout. Per-layout in-surface nav lives in the layout's own
+        // handleKeydown; here we only own open (Cmd/Ctrl+K, /) and close (Esc).
+        initGlobalShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                    e.preventDefault();
+                    this.openModal();
+                }
+                if (e.key === '/' && !e.ctrlKey && !e.metaKey &&
+                    e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    this.openModal();
+                }
+                if (e.key === 'Escape' && this.isModalOpen) {
+                    e.preventDefault();
+                    this.closeModal();
+                }
+            });
+
+            document.querySelectorAll('[data-ghost-search]').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.openModal();
+                });
+            });
         }
 
         initEventListeners() {
@@ -611,25 +823,30 @@ import Typesense from 'typesense';
 
             // Store active element for focus restoration
             this.activeElement = document.activeElement;
-
-            // Show modal
-            this.modal.classList.remove(`${CSS_PREFIX}-hidden`);
             this.isModalOpen = true;
-
-            // Lock body scroll
             this.lockBodyScroll();
 
-            // Focus search input
-            setTimeout(() => {
-                this.searchInput.focus();
-            }, 50);
+            if (this.activeLayout) {
+                this.activeLayout.onOpen();
+                this.activeLayout.focusInput();
+            } else {
+                // Show modal
+                this.modal.classList.remove(`${CSS_PREFIX}-hidden`);
+                // Focus search input
+                setTimeout(() => {
+                    this.searchInput.focus();
+                }, 50);
+            }
 
             // Lazily fetch dynamic suggestions on first open (no-op without a
             // suggestionsUrl), then re-render the list. Done after the modal is
             // shown so opening stays instant; the suggestions update in place
             // when the fetch resolves.
             if (this.config.suggestionsUrl && !this.suggestionsFetched) {
-                this.fetchSuggestions().then(() => this.renderSuggestions());
+                this.fetchSuggestions().then(() => {
+                    if (this.activeLayout) this.activeLayout.renderSuggestions();
+                    else this.renderSuggestions();
+                });
             }
 
             // Update URL
@@ -641,27 +858,26 @@ import Typesense from 'typesense';
             const searchParams = new URLSearchParams(window.location.search);
             const searchQuery = searchParams.get('s') || searchParams.get('q');
 
-            if (searchQuery && this.searchInput) {
-                this.searchInput.value = searchQuery;
+            if (searchQuery) {
+                if (this.activeLayout) this.activeLayout.setQuery(searchQuery);
+                else if (this.searchInput) this.searchInput.value = searchQuery;
                 this.handleSearch(searchQuery);
             }
         }
 
         closeModal() {
             if (!this.isModalOpen) return;
-
-            // Hide modal
-            this.modal.classList.add(`${CSS_PREFIX}-hidden`);
             this.isModalOpen = false;
-
-            // Unlock body scroll
             this.unlockBodyScroll();
-
-            // Clear search
             this.selectedIndex = -1;
-            if (this.searchInput) {
-                this.searchInput.value = '';
+
+            if (this.activeLayout) {
+                this.activeLayout.onClose();
+            } else {
+                this.modal.classList.add(`${CSS_PREFIX}-hidden`);
+                if (this.searchInput) this.searchInput.value = '';
             }
+
             // Reset analytics session state so the next time the modal opens,
             // the first search is emitted even if it repeats a prior query.
             this.lastQuery = '';
@@ -686,11 +902,51 @@ import Typesense from 'typesense';
 
             if (!query) {
                 this.selectedIndex = -1;
+                if (this.activeLayout) {
+                    this.activeLayout.renderInitial();
+                    return;
+                }
                 if (this.hitsList) this.hitsList.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.commonSearches) this.commonSearches.classList.remove(`${CSS_PREFIX}-hidden`);
                 if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
+                return;
+            }
+
+            // Alternative layout path: query via the same params, then hand
+            // the normalized model + facet counts to the layout to render.
+            if (this.activeLayout) {
+                this.activeLayout.renderLoading();
+                try {
+                    if (!this.typesenseClient) {
+                        this.typesenseClient = new Typesense.Client({
+                            nodes: this.config.typesenseNodes,
+                            apiKey: this.config.typesenseApiKey,
+                            connectionTimeoutSeconds: 2
+                        });
+                    }
+                    const results = await this.typesenseClient
+                        .collections(this.config.collectionName)
+                        .documents()
+                        .search({ q: query, ...this.getSearchParameters() });
+
+                    const resultCount = typeof results.found === 'number' ? results.found : results.hits.length;
+                    this.lastQuery = query;
+                    this.trackSearch(query, resultCount);
+
+                    if (this.config.facets?.length) {
+                        this.activeLayout.renderFacets(results.facet_counts, this.selectedFacets);
+                    }
+                    if (!results.hits.length) {
+                        this.activeLayout.renderEmpty(query);
+                        return;
+                    }
+                    const model = results.hits.map((hit, i) => this.normalizeHit(hit, i));
+                    this.activeLayout.renderResults(model, { query, found: resultCount, facetCounts: results.facet_counts });
+                } catch (error) {
+                    this.activeLayout.renderEmpty(query);
+                }
                 return;
             }
 
