@@ -62,6 +62,25 @@ describe('getSearchParameters — semantic search', () => {
     const params = mountWithConfig().getSearchParameters();
     expect(params.query_by.split(',')).not.toContain('embedding');
   });
+
+  it('emits a keyword-favoring vector_query (low alpha + distance threshold) when enabled', () => {
+    const params = mountWithConfig({ semanticSearch: true }).getSearchParameters();
+    expect(params.vector_query).toMatch(/^embedding:\(\[\], alpha: 0\.2, distance_threshold: 0\.8\)$/);
+  });
+
+  it('honors custom semanticAlpha / semanticDistanceThreshold', () => {
+    const params = mountWithConfig({
+      semanticSearch: true,
+      semanticAlpha: 0.5,
+      semanticDistanceThreshold: 0.4
+    }).getSearchParameters();
+    expect(params.vector_query).toContain('alpha: 0.5');
+    expect(params.vector_query).toContain('distance_threshold: 0.4');
+  });
+
+  it('does not set vector_query when semantic search is disabled', () => {
+    expect(mountWithConfig().getSearchParameters().vector_query).toBeUndefined();
+  });
 });
 
 describe('getSearchParameters — facets', () => {
@@ -295,10 +314,13 @@ describe('result templates', () => {
     expect(html).not.toContain('<script>');
   });
 
-  it('adds feature_image to include_fields only in grid mode', () => {
-    expect(mountWithConfig({ template: 'grid' }).getSearchParameters().include_fields)
-      .toContain('feature_image');
-    expect(mountWithConfig().getSearchParameters().include_fields)
-      .not.toContain('feature_image');
+  it('requests feature_image and authors for the refined modal (list and grid)', () => {
+    // The refined modal shows a thumbnail + author in both list and grid rows,
+    // so both fields are always requested.
+    const listFields = mountWithConfig().getSearchParameters().include_fields;
+    expect(listFields).toContain('feature_image');
+    expect(listFields).toContain('authors');
+    const gridFields = mountWithConfig({ template: 'grid' }).getSearchParameters().include_fields;
+    expect(gridFields).toContain('feature_image');
   });
 });

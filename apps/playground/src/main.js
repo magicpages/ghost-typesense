@@ -5,9 +5,11 @@
 const SEARCH_BUNDLE_URL = '/search.min.js';
 
 const els = {
+  uistyle: document.getElementById('opt-uistyle'),
   template: document.getElementById('opt-template'),
   theme: document.getElementById('opt-theme'),
   facets: document.getElementById('opt-facets'),
+  searchAuthors: document.getElementById('opt-searchauthors'),
   suggestions: document.getElementById('opt-suggestions'),
   semantic: document.getElementById('opt-semantic'),
   analytics: document.getElementById('opt-analytics'),
@@ -160,11 +162,21 @@ function buildConfig(backend) {
     enableHighlighting: true
   };
 
+  // UI style from the selector. 'palette'/'discovery' are loaded on demand
+  // from /palette.min.js or /discovery.min.js; 'modal' is the built-in default.
+  const uiStyle = els.uistyle ? els.uistyle.value : 'modal';
+  if (uiStyle === 'palette' || uiStyle === 'discovery') {
+    config.uiStyle = uiStyle;
+  }
+
   if (els.facets.checked) {
     config.facets = [
       { field: 'tags.name', label: 'Topics', limit: 10 },
       { field: 'authors', label: 'Authors', limit: 10 }
     ];
+  }
+  if (els.searchAuthors && els.searchAuthors.checked) {
+    config.searchAuthors = true;
   }
   if (els.suggestions.checked) {
     config.pinnedSearches = ['Ghost'];
@@ -188,9 +200,11 @@ const STORAGE_KEY = 'mp-playground-state';
 
 function readControls() {
   return {
+    uistyle: els.uistyle ? els.uistyle.value : 'modal',
     template: els.template.value,
     theme: els.theme.value,
     facets: els.facets.checked,
+    searchAuthors: els.searchAuthors ? els.searchAuthors.checked : false,
     suggestions: els.suggestions.checked,
     semantic: els.semantic.checked,
     analytics: els.analytics.checked,
@@ -200,9 +214,11 @@ function readControls() {
 
 function restoreControls(state) {
   if (!state) return;
+  if (els.uistyle) els.uistyle.value = state.uistyle ?? 'modal';
   els.template.value = state.template ?? 'list';
   els.theme.value = state.theme ?? 'system';
   els.facets.checked = !!state.facets;
+  if (els.searchAuthors) els.searchAuthors.checked = !!state.searchAuthors;
   els.suggestions.checked = !!state.suggestions;
   els.semantic.checked = !!state.semantic;
   els.analytics.checked = state.analytics !== false;
@@ -258,7 +274,7 @@ async function loadWidget() {
 
   const config = buildConfig(backend);
   window.__MP_SEARCH_CONFIG__ = config;
-  write(`config applied: template=${config.template}, facets=${!!config.facets}, semantic=${!!config.semanticSearch}, analytics=${!!config.analytics}`);
+  write(`config applied: ui=${config.uiStyle || 'modal'}, template=${config.template}, facets=${!!config.facets}, semantic=${!!config.semanticSearch}, analytics=${!!config.analytics}`);
 
   try {
     // Dynamic import of the shipped artifact — the widget auto-creates its own
@@ -271,9 +287,11 @@ async function loadWidget() {
   }
 
   if (state.open) {
-    // Wait for the widget's async init to finish wiring up the modal, then open.
+    // Wait for the widget to exist, then open. openModal() itself awaits the
+    // widget's async init (which lazily loads the selected layout's chunk), so
+    // the surface is ready before it shows.
     await waitFor(() => window.magicPagesSearch && typeof window.magicPagesSearch.openModal === 'function');
-    window.magicPagesSearch.openModal();
+    await window.magicPagesSearch.openModal();
     write('search opened — type to query (try “tomato”, “ghost”, “garden”)');
   }
 }

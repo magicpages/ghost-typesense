@@ -1,1 +1,422 @@
-/* Palette layout styles — scoped under .mp-search-palette. Shipped only in palette.min.js. */
+/* Command-palette layout styles — scoped under .mp-search-palette.
+ *
+ * Shipped only in palette.min.js (this layout's CSS chunk). Every rule is
+ * scoped under .mp-search-palette so it can never collide with the core modal
+ * styles that share the shadow root.
+ *
+ * The shared base stylesheet (styles.css → BUNDLED_CSS) only declares the
+ * color and rem tokens under .mp-search-modal / .mp-search-dark, neither
+ * of which is present on the palette root, so the tokens are re-declared here:
+ * light values on .mp-search-palette, dark overrides on
+ * .mp-search-palette.mp-search-dark. */
+
+.mp-search-palette {
+  /* Shared scale token */
+  --mp-rem: 16px;
+
+  /* Light theme tokens (mirrors .mp-search-modal) */
+  --color-surface: rgb(252, 252, 252);
+  --color-surface-elevated: rgb(255, 255, 255);
+  --color-surface-hover: rgba(0, 0, 0, 0.04);
+  --color-text: rgb(23, 23, 23);
+  --color-text-secondary: rgb(82, 82, 82);
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-backdrop: rgba(0, 0, 0, 0.15);
+  --accent-color: var(--ghost-accent-color, #6366f1);
+  --accent-color-hover: color-mix(in srgb, black 15%, var(--accent-color));
+  --color-result-bg: rgb(252, 252, 252);
+  --color-result-hover: color-mix(in srgb, var(--accent-color) 8%, transparent);
+
+  /* Global tokens (also under :root in styles.css; re-declared for safety) */
+  --transition-base: 80ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 3999999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--mp-rem);
+  line-height: 1.5;
+  color: var(--color-text);
+  -webkit-text-size-adjust: 100%;
+}
+
+.mp-search-palette.mp-search-dark {
+  --color-surface: rgb(32, 32, 32);
+  --color-surface-elevated: rgb(45, 45, 45);
+  --color-surface-hover: rgba(255, 255, 255, 0.04);
+  --color-text: rgb(250, 250, 250);
+  --color-text-secondary: rgb(161, 161, 161);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-backdrop: rgba(0, 0, 0, 0.4);
+  --accent-color: var(--ghost-accent-color, #818cf8);
+  --accent-color-hover: color-mix(in srgb, white 15%, var(--accent-color));
+  --color-result-bg: rgb(38, 38, 38);
+  --color-result-hover: color-mix(in srgb, var(--accent-color) 8%, transparent);
+}
+
+.mp-search-palette * {
+  box-sizing: border-box;
+}
+
+/* Backdrop with glass effect */
+.mp-search-palette .mp-search-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--color-backdrop);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Top-anchored spotlight panel — compact, not a full-height modal */
+.mp-search-palette .mp-search-palette-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: calc(40 * var(--mp-rem));
+  margin: 12vh calc(1 * var(--mp-rem)) 0;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: calc(0.75 * var(--mp-rem));
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: mp-search-palette-in var(--transition-smooth);
+}
+
+@keyframes mp-search-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-0.5 * var(--mp-rem))) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Search bar */
+.mp-search-palette .mp-search-palette-searchbar {
+  display: flex;
+  align-items: center;
+  gap: calc(0.625 * var(--mp-rem));
+  padding: calc(0.75 * var(--mp-rem)) calc(0.875 * var(--mp-rem));
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.mp-search-palette .mp-search-palette-magnifier {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(1.25 * var(--mp-rem));
+  height: calc(1.25 * var(--mp-rem));
+  color: var(--color-text-secondary);
+  flex: 0 0 auto;
+}
+
+.mp-search-palette .mp-search-palette-magnifier svg {
+  width: calc(1.125 * var(--mp-rem));
+  height: calc(1.125 * var(--mp-rem));
+}
+
+/* Reset the shared .mp-search-input chrome — the palette input is borderless,
+ * inline in the searchbar (the modal version is a bordered pill). */
+.mp-search-palette .mp-search-palette-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: calc(1.0625 * var(--mp-rem));
+  letter-spacing: -0.011em;
+  height: auto;
+  padding: calc(0.25 * var(--mp-rem)) 0;
+}
+
+.mp-search-palette .mp-search-palette-input:focus,
+.mp-search-palette .mp-search-palette-input:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.mp-search-palette .mp-search-palette-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+.mp-search-palette .mp-search-palette-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  display: none;
+}
+
+.mp-search-palette .mp-search-palette-esc-hint {
+  flex: 0 0 auto;
+}
+
+/* Results scroll region */
+.mp-search-palette .mp-search-palette-results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+  padding: calc(0.375 * var(--mp-rem)) 0;
+  background: var(--color-surface);
+}
+
+.mp-search-palette .mp-search-palette-results::-webkit-scrollbar {
+  width: 6px;
+}
+.mp-search-palette .mp-search-palette-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mp-search-palette .mp-search-palette-results::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+/* Buckets */
+.mp-search-palette .mp-search-palette-group {
+  padding: 0 calc(0.375 * var(--mp-rem));
+}
+
+.mp-search-palette .mp-search-palette-group + .mp-search-palette-group {
+  margin-top: calc(0.25 * var(--mp-rem));
+}
+
+.mp-search-palette .mp-search-palette-group-label {
+  display: flex;
+  align-items: center;
+  gap: calc(0.375 * var(--mp-rem));
+  padding: calc(0.5 * var(--mp-rem)) calc(0.625 * var(--mp-rem)) calc(0.25 * var(--mp-rem));
+  color: var(--color-text-secondary);
+  font-size: calc(0.6875 * var(--mp-rem));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mp-search-palette .mp-search-palette-group-count {
+  font-weight: 500;
+  opacity: 0.7;
+  letter-spacing: 0;
+}
+
+/* Dense one-line rows — no thumbnails, tight vertical rhythm.
+ * Post rows are real <a> anchors; reset link chrome so they read as rows. */
+.mp-search-palette .mp-search-palette-row {
+  display: flex;
+  align-items: center;
+  gap: calc(0.625 * var(--mp-rem));
+  padding: calc(0.4375 * var(--mp-rem)) calc(0.625 * var(--mp-rem));
+  border-radius: calc(0.5 * var(--mp-rem));
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color var(--transition-base), border-color var(--transition-base);
+  user-select: none;
+  text-decoration: none;
+  color: inherit;
+}
+
+.mp-search-palette .mp-search-palette-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.mp-search-palette .mp-search-palette-row-active {
+  background: var(--color-result-hover);
+  border-color: var(--accent-color);
+}
+
+.mp-search-palette .mp-search-palette-row-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(1.125 * var(--mp-rem));
+  height: calc(1.125 * var(--mp-rem));
+  color: var(--color-text-secondary);
+}
+
+.mp-search-palette .mp-search-palette-row-active .mp-search-palette-row-icon {
+  color: var(--accent-color);
+}
+
+.mp-search-palette .mp-search-palette-row-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mp-search-palette .mp-search-palette-row-icon-sigil {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(0.9375 * var(--mp-rem));
+  font-weight: 600;
+}
+
+.mp-search-palette .mp-search-palette-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: calc(0.9375 * var(--mp-rem));
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-search-palette .mp-search-palette-row-active .mp-search-palette-row-title {
+  color: var(--accent-color);
+}
+
+/* Trusted highlight marks from Typesense (assigned via innerHTML by the core) */
+.mp-search-palette .mp-search-palette-row-title mark {
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Inline meta — tag · date · badge */
+.mp-search-palette .mp-search-palette-row-meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(0.375 * var(--mp-rem));
+  font-size: calc(0.75 * var(--mp-rem));
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.mp-search-palette .mp-search-palette-meta-chip {
+  padding: calc(0.0625 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
+  border-radius: calc(0.5 * var(--mp-rem));
+  background: var(--color-surface-hover);
+  font-size: calc(0.6875 * var(--mp-rem));
+}
+
+.mp-search-palette .mp-search-palette-meta-date {
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-search-palette .mp-search-palette-meta-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-text);
+  opacity: 0.7;
+}
+
+/* Members badge — accent tint (mirrors the modal's gated badge intent) */
+.mp-search-palette .mp-search-palette-badge {
+  padding: calc(0.0625 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
+  border-radius: calc(0.5 * var(--mp-rem));
+  font-size: calc(0.625 * var(--mp-rem));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+}
+
+/* Enter affordance only on the active post row */
+.mp-search-palette .mp-search-palette-row-enter {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: calc(0.8125 * var(--mp-rem));
+  color: var(--accent-color);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.mp-search-palette .mp-search-palette-row-active .mp-search-palette-row-enter {
+  opacity: 1;
+}
+
+/* Empty / prompt states */
+.mp-search-palette .mp-search-palette-empty {
+  padding: calc(2 * var(--mp-rem)) calc(1.5 * var(--mp-rem));
+  text-align: center;
+}
+
+.mp-search-palette .mp-search-palette-empty-title {
+  margin: 0 0 calc(0.25 * var(--mp-rem));
+  font-size: calc(0.9375 * var(--mp-rem));
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.mp-search-palette .mp-search-palette-empty-sub {
+  margin: 0;
+  font-size: calc(0.8125 * var(--mp-rem));
+  color: var(--color-text-secondary);
+}
+
+/* Footer command bar */
+.mp-search-palette .mp-search-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: calc(1 * var(--mp-rem));
+  padding: calc(0.5 * var(--mp-rem)) calc(0.875 * var(--mp-rem));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  font-size: calc(0.75 * var(--mp-rem));
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.mp-search-palette .mp-search-palette-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.25 * var(--mp-rem));
+}
+
+/* The footer kbd hints reuse the core .mp-search-kbd token look, but reset the
+ * horizontal margin that the modal applies so they sit tight together. */
+.mp-search-palette .mp-search-palette-footer .mp-search-kbd,
+.mp-search-palette .mp-search-palette-searchbar .mp-search-kbd {
+  margin: 0;
+  min-width: calc(1.25 * var(--mp-rem));
+}
+
+.mp-search-palette .mp-search-palette-status {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .mp-search-palette .mp-search-palette-panel {
+    animation: none;
+  }
+  .mp-search-palette .mp-search-palette-row,
+  .mp-search-palette .mp-search-palette-row-enter {
+    transition: none;
+  }
+}
+
+/* Small screens: fill more of the viewport, keep density */
+@media (max-width: 640px) {
+  .mp-search-palette .mp-search-palette-panel {
+    margin-top: 4vh;
+    max-height: 86vh;
+    max-width: 100%;
+  }
+  .mp-search-palette .mp-search-palette-footer {
+    gap: calc(0.625 * var(--mp-rem));
+  }
+}
