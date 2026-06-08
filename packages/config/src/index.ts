@@ -109,7 +109,10 @@ export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
   { name: 'tags', type: 'string[]', facet: true, optional: true },
   { name: 'tags.name', type: 'string[]', index: true, facet: true, optional: true },
   { name: 'tags.slug', type: 'string[]', index: true, facet: true, optional: true },
-  { name: 'authors', type: 'string[]', facet: true, optional: true }
+  { name: 'authors', type: 'string[]', facet: true, optional: true },
+  // Ghost visibility ('public', 'members', 'paid', ...). Optional so existing
+  // collections are unaffected; lets the front end distinguish gated results.
+  { name: 'visibility', type: 'string', facet: true, optional: true }
 ];
 
 /**
@@ -147,7 +150,13 @@ export const CollectionConfigSchema = z.object({
       // Convert map back to array, keeping any additional custom fields
       return Array.from(fieldMap.values());
     }),
-  default_sorting_field: z.string().optional()
+  default_sorting_field: z.string().optional(),
+  // Opt-in: when true, members-only / paid posts are indexed as redacted
+  // documents (title, excerpt, preview, metadata — never the protected body).
+  // Omitted/undefined is treated as false, so only public published content is
+  // indexed by default. Left optional (no schema default) so existing config
+  // objects remain valid without this key.
+  indexGatedContent: z.boolean().optional()
 });
 
 /**

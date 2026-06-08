@@ -507,6 +507,23 @@
     word-break: break-word;
 }
 
+/* Members-only / paid result badge */
+.mp-search-gated-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(0.25 * var(--mp-rem));
+    margin-left: calc(0.5 * var(--mp-rem));
+    padding: calc(0.0625 * var(--mp-rem)) calc(0.4 * var(--mp-rem));
+    border-radius: 999px;
+    background: var(--color-result-hover);
+    color: var(--color-text-secondary);
+    font-size: calc(0.6875 * var(--mp-rem));
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
 /* Grid (card) layout */
 .mp-search-hits-list.mp-search-grid {
     display: grid;
