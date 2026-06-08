@@ -13,19 +13,24 @@ const searchUiDist = resolve(__dirname, '../../packages/search-ui/dist');
  * looks like a routing bug.
  */
 function serveSearchBundle() {
+  // Serve the core bundle and the on-demand layout chunks (palette/discovery)
+  // straight from packages/search-ui/dist, so the widget's lazy chunk loading
+  // works in the playground exactly as on a CDN.
+  const SERVABLE = /^\/(search|palette|discovery)\.min\.js(?:\?.*)?$/;
   return {
     name: 'serve-search-bundle',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (!/^\/search\.min\.js(?:\?.*)?$/.test(req.url ?? '')) return next();
-        const filePath = resolve(searchUiDist, 'search.min.js');
+        const m = (req.url ?? '').match(SERVABLE);
+        if (!m) return next();
+        const filePath = resolve(searchUiDist, `${m[1]}.min.js`);
         try {
           await stat(filePath);
         } catch {
           res.statusCode = 503;
           res.setHeader('Content-Type', 'text/plain; charset=utf-8');
           res.end(
-            'search.min.js not built yet — run `npm run build` in packages/search-ui ' +
+            `${m[1]}.min.js not built yet — run \`npm run build\` in packages/search-ui ` +
               '(or `npx turbo run build --filter=@magicpages/ghost-typesense-search-ui`).'
           );
           return;

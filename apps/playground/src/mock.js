@@ -36,7 +36,7 @@ export const POSTS = [
     url: 'https://demo.example.com/migrating-to-ghost/',
     excerpt: 'A step-by-step guide to moving an existing site onto Ghost.',
     plaintext: 'Export your content, map authors and tags, import into Ghost, then verify redirects.',
-    feature_image: null,
+    feature_image: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=1200&q=80',
     published_at: 1698000000000,
     tags: ['Ghost', 'How To'],
     authors: ['Jannis']
@@ -141,10 +141,18 @@ export function mockSearchResponse(params = {}) {
   // post's protected body is not even matchable.
   const indexed = POSTS.map(toIndexedDoc);
 
+  // Match over the fields the widget actually asked for (query_by). authors is
+  // included when query_by lists it (searchAuthors) or when the query is
+  // semantic (embedding in query_by) — so a semantic/author search for a
+  // contributor name finds *their* posts, not unrelated ones.
+  const queryBy = (params.query_by || '').toLowerCase();
+  const includeAuthors = queryBy.includes('author') || queryBy.includes('embedding');
   const filtered = indexed.filter((p) => {
     if (!matchesFilters(p, filters)) return false;
     if (!q || q === '*') return true;
-    const haystack = `${p.title} ${p.excerpt} ${p.plaintext} ${p.tags.join(' ')}`.toLowerCase();
+    const fieldsText = [p.title, p.excerpt, p.plaintext, p.tags.join(' ')];
+    if (includeAuthors) fieldsText.push((p.authors || []).join(' '));
+    const haystack = fieldsText.join(' ').toLowerCase();
     return haystack.includes(q.toLowerCase());
   });
 

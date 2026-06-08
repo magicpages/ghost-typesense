@@ -93,8 +93,12 @@ window.__MP_SEARCH_CONFIG__ = {
 | `analytics` | `Object` | No | — | Opt-in search analytics — emit query, click, and zero-result events to your own endpoint (see [Analytics](#analytics)) |
 | `semanticSearch` | `Boolean` | No | `false` | Enable hybrid (keyword + vector) search against an embedding field (see [Semantic search](#semantic-search)) |
 | `embeddingFieldName` | `String` | No | `'embedding'` | Name of the collection's embedding field, used when `semanticSearch` is enabled |
+| `semanticAlpha` | `Number` | No | `0.2` | Vector weight in hybrid rank fusion when `semanticSearch` is on; lower favours keyword matches (see [Keeping hybrid results relevant](#keeping-hybrid-results-relevant)) |
+| `semanticDistanceThreshold` | `Number` | No | `0.8` | Drop vector matches whose cosine distance exceeds this when `semanticSearch` is on; lower is stricter |
 | `facets` | `Array` | No | `[]` | Reader-facing filter controls for faceted fields (see [Filters](#filters)) |
-| `template` | `String` | No | `'list'` | Result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
+| `uiStyle` | `String` | No | `'modal'` | Overall layout: `'modal'`, `'palette'`, or `'discovery'` (see [UI layouts](#ui-layouts)) |
+| `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
+| `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
 
 ### Search Fields Configuration
 
@@ -130,6 +134,21 @@ searchFields: {
     html: { weight: 1, highlight: true }        // Include HTML content with low weight
 }
 ```
+
+### Searchable fields
+
+By default, typing a query matches against **title, excerpt, body text, and tag names/slugs**. So a search for a tag like `gardening` finds every post tagged Gardening out of the box.
+
+**Author names are not searchable by default** — typing an author's name finds nothing unless they also appear in a post's title or body. Set `searchAuthors: true` to make author names matchable (added to the query at a low weight):
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    searchAuthors: true   // now "Jane Doe" finds Jane's posts
+};
+```
+
+This is opt-in so existing sites' search behaviour is unchanged. For finer control you can instead add `authors` to `searchFields` with an explicit weight.
 
 ### Advanced Search Parameters
 
@@ -235,21 +254,47 @@ The endpoint may return either a bare array of strings or an object with a `sugg
 
 The fetch is **fail-silent**: if the request errors or returns a non-success status, the widget falls back to `pinnedSearches` + `commonSearches` with no visible error, and does not retry that URL for the rest of the session. The widget is backend-agnostic — it only consumes the URL and does not define where the suggestions come from.
 
-## Result templates
+## UI layouts
 
-Results render as a vertical **list** by default. Image-led publications can switch to a **grid** of cards that feature each post's image:
+The widget ships three interchangeable layouts, chosen with `uiStyle`. They all share the same search engine, query, theming, keyboard shortcuts, analytics, facets, and i18n — only the presentation differs.
 
 ```javascript
 window.__MP_SEARCH_CONFIG__ = {
     // ... required config
-    template: 'grid' // 'list' (default) | 'grid'
+    uiStyle: 'modal' // 'modal' (default) | 'palette' | 'discovery'
 };
 ```
 
-- `'list'` — the default title-and-excerpt rows.
+| `uiStyle` | What it is |
+|-----------|------------|
+| `'modal'` *(default)* | A centered modal with rich result rows: a feature-image thumbnail (tinted initial fallback), highlighted title, one-line excerpt, and a metadata line (date · primary tag · author). Supports `template: 'list' \| 'grid'` (see [Result templates](#result-templates)). |
+| `'palette'` | A dense, keyboard-first command palette (⌘K / Cmd-K idiom): compact rows grouped into Posts / Tags / Authors, a localStorage-backed "Recent searches" list, and a footer command bar. Optimised for speed. |
+| `'discovery'` | A two-pane content explorer: a results list on the left, a live preview pane on the right (feature image, full excerpt, date, tags, author, "Read post" link), and a facet rail. Best for image-led, browse-heavy publications. |
+
+### How the layouts load (one script, no wasted bytes)
+
+The install is unchanged — a single `<script src=".../search.min.js">`. The core bundle contains only the engine and the default **modal** layout, so a site using the default downloads nothing extra.
+
+When `uiStyle` is `'palette'` or `'discovery'`, the core lazily fetches that layout's own chunk (`palette.min.js` / `discovery.min.js`, each with its own CSS) from the **same directory as `search.min.js`**, on first load. A reader therefore never downloads a layout the site didn't choose. If the chunk fails to load, the widget falls back to the built-in modal so search keeps working.
+
+> Self-hosting note: if you host the bundle yourself, deploy the layout chunks (`palette.min.js`, `discovery.min.js`) alongside `search.min.js`. The npm package and CDN URLs already include them.
+
+## Result templates
+
+Within the **modal** layout, results render as a vertical **list** by default. Image-led publications can switch to a **grid** of cards:
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    uiStyle: 'modal',  // (default)
+    template: 'grid'   // 'list' (default) | 'grid'
+};
+```
+
+- `'list'` — rich rows with a thumbnail, title, excerpt, and metadata line.
 - `'grid'` — responsive cards (multi-column on desktop, single column on mobile) showing the post's `feature_image`, title, excerpt, and up to three tags. Posts without a feature image get a styled placeholder rather than a broken image.
 
-Both layouts use the same results, highlighting, keyboard navigation, and click handling — only the markup differs. The grid layout adds `feature_image` to the requested fields; the list layout's query is unchanged.
+Both reuse the same results, highlighting, keyboard navigation, and click handling — only the markup differs. (`template` applies to the modal layout; the palette and discovery layouts have their own fixed presentation.)
 
 ## Filters
 
@@ -305,6 +350,24 @@ window.__MP_SEARCH_CONFIG__ = {
 This requires the collection to have been created with an auto-embedding field. That is configured on the indexing side — see the [collection schema and semantic search documentation in the project README](../../README.md#semantic-search). When `semanticSearch` is enabled but the collection has no matching embedding field, Typesense returns an error for the query; leave it `false` for lexical-only collections.
 
 You can still combine this with `typesenseSearchParams` — the embedding field is appended to whatever `query_by` is in effect, and `query_by_weights` is left untouched (the vector field carries no keyword weight).
+
+### Keeping hybrid results relevant
+
+Hybrid search fuses keyword and vector matches, which means a query can surface posts that are merely *semantically near* even with no keyword match — e.g. searching an author's name could pull in unrelated posts whose embeddings happen to be close. To keep strong keyword matches on top, the widget sends a keyword-favoring `vector_query`:
+
+- **`semanticAlpha`** (default `0.2`) — the vector weight in rank fusion (Typesense's default is `0.3`). Lower means keyword matches dominate; raise it to let vector similarity weigh more.
+- **`semanticDistanceThreshold`** (default `0.8`) — vector matches with a cosine distance beyond this are dropped, so far-fetched semantic-only matches don't appear. Lower is stricter.
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    semanticSearch: true,
+    semanticAlpha: 0.2,              // optional — keyword-dominant fusion
+    semanticDistanceThreshold: 0.8   // optional — drop distant vector matches
+};
+```
+
+A `vector_query` you set yourself via `typesenseSearchParams` takes precedence over these defaults.
 
 ## Analytics
 
@@ -385,11 +448,19 @@ https://yourblog.com/#/search/getting+started
 
 ### Keyboard Shortcuts
 
-- `/`: Open search (when not focused on an input field)
-- `Cmd/Ctrl + K`: Open search
-- `↑/↓`: Navigate through results
-- `Enter`: Select result
-- `Esc`: Close search
+The same shortcuts work in all three layouts (`modal`, `palette`, `discovery`):
+
+| Key | Action |
+|-----|--------|
+| `/` | Open search (when focus is not in an input or textarea) |
+| `Cmd/Ctrl + K` | Open search |
+| `↑` / `↓` | Move the selection through results (the discovery preview pane follows the selection live) |
+| `Home` / `End` | Jump to the first / last result |
+| `PageUp` / `PageDown` | Move the selection by a page (discovery layout) |
+| `Enter` | Open the selected result |
+| `Esc` | Close search |
+
+Open (`/`, `Cmd/Ctrl+K`) and close (`Esc`) are owned by the core so they behave identically everywhere; in-surface navigation (arrows, `Enter`, `Home`/`End`, `PageUp`/`PageDown`) is delivered to the active layout, which decides what each key does.
 
 ## Customization
 
@@ -449,6 +520,9 @@ window.__MP_SEARCH_CONFIG__ = {
 | `membersLabel` | "Members only" | Badge text on gated (members-only / paid) results |
 | `ariaMembersLabel` | "Members-only content" | ARIA label for the members-only badge |
 | `untitledPost` | "Untitled" | Fallback for posts without titles |
+| `relativeNow` / `relativeMinutes` / `relativeHours` / `relativeDays` / `relativeMonths` / `relativeYears` | "just now" / "{n}m ago" / … | Relative dates in result rows (`{n}` is substituted) |
+
+The **palette** layout adds keys prefixed `palette*` (group headings, hints, empty/loading states, relative dates), and the **discovery** layout adds `facetTopicsLabel`, `facetAuthorsLabel`, `byLabel`, `readPostLabel`, and `discovery*` keys. All are overridable the same way; see `defaultI18n` in `src/search.js` for the full list.
 
 ### Example Translations
 
