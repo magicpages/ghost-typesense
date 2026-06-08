@@ -173,6 +173,29 @@ Set `semanticSearch: true` in your search config — see the [search-ui semantic
 - **Memory.** Vector fields meaningfully increase a collection's RAM footprint. Benchmark on a representative slice of your content before enabling it for a large blog.
 - **Index time.** Generating embeddings adds latency to syncing. Built-in models add CPU time on the Typesense server; external providers add per-document API calls (and their cost). Large initial syncs take noticeably longer than lexical-only indexing.
 
+## Members-only content
+
+**By default, only public published posts are indexed.** Members-only and paid posts are skipped entirely, so a blog that publishes mostly gated content will have a near-empty search index.
+
+You can opt in to indexing gated posts as **redacted** documents — discoverable in search, but without exposing the protected body. Set `indexGatedContent` on the collection config:
+
+```json
+{
+  "collection": {
+    "name": "ghost",
+    "indexGatedContent": true
+  }
+}
+```
+
+With it enabled:
+
+- Non-public posts (`members`, `paid`, tier-restricted) are indexed with their **title, excerpt, URL, tags, and feature image**, plus a `visibility` field.
+- The searchable text is limited to the public excerpt (falling back to the title). The post's body is **never read or indexed** — this package uses Ghost's Content API, which only ever returns the public preview for gated posts, and the indexer ignores the body regardless. There is no protected text in the index to leak.
+- The search UI marks these results with a "members only" badge (see the [search-ui README](packages/search-ui/README.md#members-only-results)), turning gated posts into discoverable lead magnets.
+
+For real-time updates, set `INDEX_GATED_CONTENT=true` on the webhook handler to mirror this behaviour.
+
 ## Packages
 
 | Package | Description |
