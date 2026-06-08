@@ -1,0 +1,22 @@
+{
+  "name": "@magicpages/ghost-typesense-playground",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Standalone dev harness for the search UI — no Ghost required.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:mock": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "seed": "node scripts/seed.js",
+    "typesense:down": "docker compose down -v"
+  },
+  "dependencies": {
+    "@magicpages/ghost-typesense-search-ui": "*",
+    "typesense": "^1.7.2"
+  },
+  "devDependencies": {
+    "vite": "^5.1.0"
+  }
+}
