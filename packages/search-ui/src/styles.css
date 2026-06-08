@@ -507,6 +507,68 @@
     word-break: break-word;
 }
 
+/* Grid (card) layout */
+.mp-search-hits-list.mp-search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: calc(0.75 * var(--mp-rem));
+}
+
+.mp-search-grid .mp-search-result-item {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.mp-search-grid .mp-search-result-link:hover .mp-search-result-item,
+.mp-search-grid .mp-search-result-link.mp-search-selected .mp-search-result-item,
+.mp-search-grid .mp-search-result-link:focus .mp-search-result-item {
+    /* Cards lift instead of nudging sideways like list rows. */
+    transform: translateY(-2px);
+}
+
+.mp-search-card-image {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    display: block;
+}
+
+.mp-search-card-image-empty {
+    background: linear-gradient(135deg, var(--color-result-hover), var(--color-result-bg));
+}
+
+.mp-search-card-body {
+    padding: calc(1 * var(--mp-rem));
+    display: flex;
+    flex-direction: column;
+    gap: calc(0.375 * var(--mp-rem));
+}
+
+.mp-search-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(0.375 * var(--mp-rem));
+    margin-top: calc(0.25 * var(--mp-rem));
+}
+
+.mp-search-card-tag {
+    background: var(--color-result-hover);
+    border-radius: 999px;
+    color: var(--color-text-secondary);
+    font-size: calc(0.6875 * var(--mp-rem));
+    padding: calc(0.125 * var(--mp-rem)) calc(0.5 * var(--mp-rem));
+}
+
+@media (max-width: 640px) {
+    .mp-search-hits-list.mp-search-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Keyboard hints */
 .mp-search-hints {
     display: flex;
