@@ -10,7 +10,7 @@
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c -w",
-    "test": "exit 0",
+    "test": "vitest run",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write src/**/*.{js,css}",
     "clean": "rimraf dist"
@@ -43,7 +43,9 @@
     "rimraf": "^5.0.5",
     "rollup": "^4.12.0",
     "rollup-plugin-postcss": "^4.0.2",
-    "rollup-plugin-visualizer": "^5.14.0"
+    "rollup-plugin-visualizer": "^5.14.0",
+    "jsdom": "^24.0.0",
+    "vitest": "^1.2.2"
   },
   "publishConfig": {
     "access": "public"
