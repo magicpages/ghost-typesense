@@ -74,6 +74,13 @@
       <div class="card">
         <h2>Configuration</h2>
         <div class="row">
+          <label>UI style
+            <select id="opt-uistyle">
+              <option value="modal">modal (default)</option>
+              <option value="palette">palette (Cmd+K)</option>
+              <option value="discovery">discovery (two-pane)</option>
+            </select>
+          </label>
           <label>Template
             <select id="opt-template">
               <option value="list">list</option>
@@ -88,6 +95,7 @@
             </select>
           </label>
           <label><input type="checkbox" id="opt-facets" /> Facets (tags + authors)</label>
+          <label><input type="checkbox" id="opt-searchauthors" /> Search author names</label>
           <label><input type="checkbox" id="opt-suggestions" /> Pinned + common suggestions</label>
           <label><input type="checkbox" id="opt-semantic" /> Semantic search</label>
           <label><input type="checkbox" id="opt-analytics" checked /> Analytics (logged below)</label>
