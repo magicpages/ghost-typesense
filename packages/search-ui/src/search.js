@@ -33,6 +33,9 @@ import Typesense from 'typesense';
 
     // Layout chunks register their factory here when they finish loading.
     const layoutRegistry = {};
+    // In-flight chunk loads, keyed by layout id, so concurrent callers share a
+    // single <script> injection instead of racing to add duplicates.
+    const layoutLoads = {};
     window.__mpRegisterSearchLayout = function (id, factory) {
         layoutRegistry[id] = factory;
     };
@@ -49,7 +52,10 @@ import Typesense from 'typesense';
     // own classic-script integration is unchanged.
     function loadLayoutFactory(id) {
         if (layoutRegistry[id]) return Promise.resolve(layoutRegistry[id]);
-        return new Promise((resolve, reject) => {
+        // Reuse an in-flight load so concurrent callers don't each inject a
+        // <script> for the same chunk.
+        if (layoutLoads[id]) return layoutLoads[id];
+        const promise = new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = layoutChunkUrl(id);
             script.async = true;
@@ -60,6 +66,11 @@ import Typesense from 'typesense';
             script.onerror = () => reject(new Error(`failed to load layout chunk "${id}"`));
             document.head.appendChild(script);
         });
+        // A failed load clears the cache so a later attempt can retry; a
+        // successful one is served from layoutRegistry on the next call anyway.
+        layoutLoads[id] = promise;
+        promise.catch(() => { delete layoutLoads[id]; });
+        return promise;
     }
 
     function cleanupGhostSearch() {
@@ -536,44 +547,54 @@ import Typesense from 'typesense';
                     this.config.uiStyle = 'modal';
                 }
                 if (factory) {
-                    this.ctx = this.buildLayoutContext();
-                    this.activeLayout = factory(this.ctx);
-                    // The layout injects its own CSS chunk; the core only injects
-                    // the shared base stylesheet (tokens + shared result/badge/
-                    // facet styles the layouts reuse).
-                    const styles = document.createElement('style');
-                    // eslint-disable-next-line no-undef
-                    styles.textContent = BUNDLED_CSS;
-                    this.shadowRoot.appendChild(styles);
-                    if (typeof this.activeLayout.injectStyles === 'function') {
-                        this.activeLayout.injectStyles(this.shadowRoot);
-                    }
-                    const host = document.createElement('div');
-                    host.innerHTML = this.activeLayout.buildMarkup();
-                    while (host.firstChild) this.shadowRoot.appendChild(host.firstChild);
-                    this.activeLayout.cacheElements(this.shadowRoot);
-                    this.activeLayout.setTheme(this.isDarkTheme());
-                    this.activeLayout.bindEvents();
-                    // Deliver in-surface keydowns (arrows, Enter, Home/End,
-                    // PageUp/Down) to the layout. bindEvents only wires the
-                    // input + clicks; navigation is owned here so every layout
-                    // gets it. The listener sits on the shadow root so it fires
-                    // while focus is in the layout's search input. The layout
-                    // returns true when it consumes the key.
-                    if (typeof this.activeLayout.handleKeydown === 'function') {
-                        this.shadowRoot.addEventListener('keydown', (e) => {
-                            if (!this.isModalOpen) return;
-                            const consumed = this.activeLayout.handleKeydown(e);
-                            if (consumed) e.stopPropagation();
-                        });
-                    }
-                    this.initGlobalShortcuts();
-                    this.setupHashHandling();
-                    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                    try {
+                        this.ctx = this.buildLayoutContext();
+                        this.activeLayout = factory(this.ctx);
+                        // The layout injects its own CSS chunk; the core only injects
+                        // the shared base stylesheet (tokens + shared result/badge/
+                        // facet styles the layouts reuse).
+                        const styles = document.createElement('style');
+                        // eslint-disable-next-line no-undef
+                        styles.textContent = BUNDLED_CSS;
+                        this.shadowRoot.appendChild(styles);
+                        if (typeof this.activeLayout.injectStyles === 'function') {
+                            this.activeLayout.injectStyles(this.shadowRoot);
+                        }
+                        const host = document.createElement('div');
+                        host.innerHTML = this.activeLayout.buildMarkup();
+                        while (host.firstChild) this.shadowRoot.appendChild(host.firstChild);
+                        this.activeLayout.cacheElements(this.shadowRoot);
                         this.activeLayout.setTheme(this.isDarkTheme());
-                    });
-                    await this.handleInitialState();
-                    return;
+                        this.activeLayout.bindEvents();
+                        // Deliver in-surface keydowns (arrows, Enter, Home/End,
+                        // PageUp/Down) to the layout. bindEvents only wires the
+                        // input + clicks; navigation is owned here so every layout
+                        // gets it. The listener sits on the shadow root so it fires
+                        // while focus is in the layout's search input. The layout
+                        // returns true when it consumed the key.
+                        if (typeof this.activeLayout.handleKeydown === 'function') {
+                            this.shadowRoot.addEventListener('keydown', (e) => {
+                                if (!this.isModalOpen) return;
+                                const consumed = this.activeLayout.handleKeydown(e);
+                                if (consumed) e.stopPropagation();
+                            });
+                        }
+                        this.initGlobalShortcuts();
+                        this.setupHashHandling();
+                        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                            this.activeLayout.setTheme(this.isDarkTheme());
+                        });
+                        await this.handleInitialState();
+                        return;
+                    } catch (err) {
+                        // The chunk loaded but mounting the layout threw. Reset to
+                        // a clean modal state — clear the half-mounted layout and
+                        // its shadow content — and fall through to the modal path
+                        // below so search still works.
+                        this.activeLayout = null;
+                        this.config.uiStyle = 'modal';
+                        this.shadowRoot.replaceChildren();
+                    }
                 }
             }
 
