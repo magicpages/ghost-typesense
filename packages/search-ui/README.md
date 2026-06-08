@@ -484,6 +484,20 @@ i18n: {
 }
 ```
 
+## Development
+
+Tests run on [Vitest](https://vitest.dev/) with a jsdom environment (the widget
+is a browser Web Component):
+
+```bash
+npm test            # from packages/search-ui, or `npm test` at the repo root
+```
+
+The suite lives in `src/__tests__/` and covers the search-parameter building,
+analytics, suggestion, and facet logic. **Changes to the search UI should ship
+with tests** for the behavior they add or change, matching the other packages in
+this monorepo.
+
 ## License
 
 MIT © [MagicPages](https://www.magicpages.co)
