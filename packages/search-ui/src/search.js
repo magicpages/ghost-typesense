@@ -904,8 +904,7 @@ import Typesense from 'typesense';
             // Semantic (hybrid) search: when enabled, append the embedding
             // field to `query_by`. Typesense then fuses keyword and vector
             // relevance, auto-embedding the query against the field's model.
-            // The vector field carries no keyword weight, so query_by_weights
-            // is left untouched. When disabled, queries stay purely lexical.
+            // When disabled, queries stay purely lexical.
             if (this.config.semanticSearch) {
                 const embeddingField = this.config.embeddingFieldName || 'embedding';
                 const queryFields = String(mergedParams.query_by || '')
@@ -915,6 +914,19 @@ import Typesense from 'typesense';
                 if (!queryFields.includes(embeddingField)) {
                     queryFields.push(embeddingField);
                     mergedParams.query_by = queryFields.join(',');
+
+                    // Typesense requires query_by_weights to have the same number
+                    // of entries as query_by when it is set, so add a weight for
+                    // the embedding field too. (When no weights are set, leaving
+                    // it unset is valid — Typesense weights fields equally.)
+                    if (mergedParams.query_by_weights) {
+                        const weights = String(mergedParams.query_by_weights)
+                            .split(',')
+                            .map(w => w.trim())
+                            .filter(Boolean);
+                        weights.push('1');
+                        mergedParams.query_by_weights = weights.join(',');
+                    }
                 }
             }
 

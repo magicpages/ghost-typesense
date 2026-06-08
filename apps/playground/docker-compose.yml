@@ -1,0 +1,30 @@
+# Local Typesense for the search UI playground.
+#
+#   docker compose up -d          # start Typesense on http://localhost:8108
+#   npm run seed                  # create the `ghost` collection + sample posts
+#
+# The data-dir is a named volume so the index survives restarts; remove it with
+# `docker compose down -v` for a clean slate. The api key matches what the seed
+# script and the playground use by default.
+services:
+  typesense:
+    # Pinned to a recent stable release that ships the built-in ML models, so
+    # the playground's semantic-search toggle works against real embeddings.
+    image: typesense/typesense:28.0
+    restart: unless-stopped
+    ports:
+      - '8108:8108'
+    volumes:
+      - typesense-data:/data
+    command: >
+      --data-dir /data
+      --api-key=playground
+      --enable-cors
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8108/health']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  typesense-data:
