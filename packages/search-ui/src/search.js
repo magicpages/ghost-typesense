@@ -101,6 +101,8 @@ import Typesense from 'typesense';
                 ariaModalLabel: 'Search',
                 ariaFacetsLabel: 'Filters',
                 clearFiltersLabel: 'Clear filters',
+                membersLabel: 'Members only',
+                ariaMembersLabel: 'Members-only content',
                 untitledPost: 'Untitled'
             };
         }
@@ -786,19 +788,25 @@ import Typesense from 'typesense';
                         ? this.toRelativeUrl(hit.document.url)
                         : (hit.document.url || '#');
 
+                    // A non-public (members-only / paid) result, surfaced via
+                    // the redacted index documents. Flagged so it can be styled
+                    // and routed to a membership flow.
+                    const isGated = !!hit.document.visibility && hit.document.visibility !== 'public';
+
                     // The link wrapper (class + data attributes + aria-label) is
                     // shared by both templates, so keyboard navigation, click
                     // handling, and analytics behave identically — only the
                     // inner article markup differs.
                     return `
                         <a href="${resultUrl}"
-                            class="${CSS_PREFIX}-result-link"
+                            class="${CSS_PREFIX}-result-link${isGated ? ` ${CSS_PREFIX}-result-gated` : ''}"
                             data-result-id="${this.escapeHtmlAttr(hit.document.id)}"
                             data-result-position="${index}"
+                            ${isGated ? `data-gated="${this.escapeHtmlAttr(hit.document.visibility)}"` : ''}
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             ${this.config.template === 'grid'
-                                ? this.renderGridCard(hit, title, excerpt)
-                                : this.renderListItem(title, excerpt)}
+                                ? this.renderGridCard(hit, title, excerpt, isGated)
+                                : this.renderListItem(title, excerpt, isGated)}
                         </a>
                     `;
                 }).join('');
@@ -846,7 +854,7 @@ import Typesense from 'typesense';
                 query_by_weights: weights.join(','),
                 highlight_full_fields: highlightFields.join(','),
                 highlight_affix_num_tokens: 30,
-                include_fields: 'id,title,url,excerpt,plaintext,published_at,tags',
+                include_fields: 'id,title,url,excerpt,plaintext,published_at,tags,visibility',
                 typo_tolerance: false,
                 num_typos: 0,
                 prefix: true,
@@ -883,6 +891,20 @@ import Typesense from 'typesense';
                     .filter(Boolean);
                 if (!fields.includes('id')) {
                     fields.unshift('id');
+                    mergedParams.include_fields = fields.join(',');
+                }
+            }
+
+            // The members-only badge keys off `visibility`, so keep it in the
+            // returned fields even if a host overrode include_fields. Harmless
+            // for public-only collections (the field is simply absent there).
+            {
+                const fields = String(mergedParams.include_fields || '')
+                    .split(',')
+                    .map(f => f.trim())
+                    .filter(Boolean);
+                if (fields.length && !fields.includes('visibility')) {
+                    fields.push('visibility');
                     mergedParams.include_fields = fields.join(',');
                 }
             }
@@ -1086,12 +1108,20 @@ import Typesense from 'typesense';
             }
         }
 
+        // A small lock badge shown on gated (members-only / paid) results.
+        gatedBadge(isGated) {
+            if (!isGated) return '';
+            return `<span class="${CSS_PREFIX}-gated-badge" aria-label="${this.t('ariaMembersLabel')}">
+                        <span aria-hidden="true">🔒</span> ${this.t('membersLabel')}
+                    </span>`;
+        }
+
         // Default list layout: title + excerpt. `title` and `excerpt` already
         // contain (Typesense-escaped) highlight markup.
-        renderListItem(title, excerpt) {
+        renderListItem(title, excerpt, isGated) {
             return `
                 <article class="${CSS_PREFIX}-result-item" role="article">
-                    <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
+                    <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
                     <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                 </article>
             `;
@@ -1101,7 +1131,7 @@ import Typesense from 'typesense';
         // image is decorative (the link already carries the title via
         // aria-label); when a post has no feature_image a styled placeholder is
         // shown instead of a broken image.
-        renderGridCard(hit, title, excerpt) {
+        renderGridCard(hit, title, excerpt, isGated) {
             const featureImage = hit.document.feature_image;
             const imageHtml = featureImage
                 ? `<img class="${CSS_PREFIX}-card-image" src="${this.escapeHtmlAttr(featureImage)}" alt="" loading="lazy" />`
@@ -1118,7 +1148,7 @@ import Typesense from 'typesense';
                 <article class="${CSS_PREFIX}-result-item ${CSS_PREFIX}-card" role="article">
                     ${imageHtml}
                     <div class="${CSS_PREFIX}-card-body">
-                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}</h3>
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
                         <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                         ${tagsHtml}
                     </div>

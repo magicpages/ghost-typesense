@@ -33,22 +33,43 @@ vi.mock('@ts-ghost/content-api', () => {
             })
           })
         }),
-        read: () => ({
+        // `read` returns a public post by default, or a members-only post when
+        // asked for the gated id — so the gated indexPost paths can be tested.
+        read: ({ id }: { id: string }) => ({
           include: () => ({
-            fetch: async () => ({
-              success: true,
-              data: {
-                id: 'test-post-1',
-                title: 'Test Post 1',
-                slug: 'test-post-1',
-                html: '<p>Test content</p>',
-                excerpt: 'Test excerpt',
-                published_at: '2024-02-09T19:00:00.000Z',
-                updated_at: '2024-02-09T19:00:00.000Z',
-                tags: [{ name: 'test-tag' }],
-                authors: [{ name: 'Test Author' }]
-              }
-            })
+            fetch: async () =>
+              id === 'gated-post-1'
+                ? {
+                    success: true,
+                    data: {
+                      id: 'gated-post-1',
+                      title: 'Members Post',
+                      slug: 'members-post',
+                      html: '<p>SECRET_PROTECTED_BODY for members only.</p>',
+                      plaintext: 'SECRET_PROTECTED_BODY for members only.',
+                      excerpt: 'A public teaser.',
+                      visibility: 'members',
+                      published_at: '2024-02-09T19:00:00.000Z',
+                      updated_at: '2024-02-09T19:00:00.000Z',
+                      tags: [{ name: 'premium', slug: 'premium' }],
+                      authors: [{ name: 'Test Author' }]
+                    }
+                  }
+                : {
+                    success: true,
+                    data: {
+                      id: 'test-post-1',
+                      title: 'Test Post 1',
+                      slug: 'test-post-1',
+                      html: '<p>Test content</p>',
+                      excerpt: 'Test excerpt',
+                      visibility: 'public',
+                      published_at: '2024-02-09T19:00:00.000Z',
+                      updated_at: '2024-02-09T19:00:00.000Z',
+                      tags: [{ name: 'test-tag' }],
+                      authors: [{ name: 'Test Author' }]
+                    }
+                  }
           })
         })
       }
@@ -210,5 +231,121 @@ describe('GhostTypesenseManager — semantic search', () => {
     const document = mockDocuments.upsert.mock.calls[0]![0] as Record<string, unknown>;
     // Typesense generates the vector itself; supplying one would be rejected.
     expect('embedding' in document).toBe(false);
+  });
+});
+
+describe('GhostTypesenseManager — gated content redaction', () => {
+  const baseConfig: Config = {
+    ghost: { url: 'https://test.com', key: 'test-key', version: 'v5.0' },
+    typesense: { nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }], apiKey: 'test-key' },
+    collection: {
+      name: 'test-collection',
+      fields: [
+        { name: 'id', type: 'string', optional: false },
+        { name: 'title', type: 'string', optional: false },
+        { name: 'slug', type: 'string', optional: false },
+        { name: 'html', type: 'string', optional: true },
+        { name: 'excerpt', type: 'string', optional: true },
+        { name: 'published_at', type: 'int64', optional: false },
+        { name: 'updated_at', type: 'int64', optional: false }
+      ]
+    }
+  };
+
+  // A members-only post whose body, if ever indexed, would contain this
+  // sentinel. The redaction must guarantee it never appears in the document.
+  const gatedPost = {
+    id: 'gated-1',
+    title: 'Members deep dive',
+    slug: 'members-deep-dive',
+    excerpt: 'A teaser anyone can read.',
+    html: '<p>SECRET_PROTECTED_BODY that must never be indexed.</p>',
+    plaintext: 'SECRET_PROTECTED_BODY that must never be indexed.',
+    visibility: 'members',
+    published_at: '2024-02-09T19:00:00.000Z',
+    updated_at: '2024-02-09T19:00:00.000Z',
+    tags: [{ name: 'Premium', slug: 'premium' }],
+    authors: [{ name: 'Author' }]
+  };
+
+  // transformPost is private; reach it for a focused unit test of redaction.
+  function transform(manager: GhostTypesenseManager, post: unknown) {
+    return (manager as unknown as { transformPost: (p: unknown) => Record<string, unknown> }).transformPost(post);
+  }
+
+  it('redacts a gated post: no protected body, preview-only plaintext, visibility set', () => {
+    const manager = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, indexGatedContent: true }
+    });
+    const doc = transform(manager, gatedPost);
+
+    expect(doc.visibility).toBe('members');
+    expect(doc.html).toBe('');
+    // The searchable text is the public excerpt, never the protected body.
+    expect(doc.plaintext).toBe('A teaser anyone can read.');
+    const serialized = JSON.stringify(doc);
+    expect(serialized).not.toContain('SECRET_PROTECTED_BODY');
+    // Public metadata is still indexed so the result is useful/discoverable.
+    expect(doc.tags).toEqual(['Premium']);
+  });
+
+  it('falls back to the title when a gated post has no excerpt', () => {
+    const manager = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, indexGatedContent: true }
+    });
+    const doc = transform(manager, { ...gatedPost, excerpt: '' });
+    expect(doc.plaintext).toBe('Members deep dive');
+  });
+
+  it('indexes public posts in full with visibility "public"', () => {
+    const manager = new GhostTypesenseManager(baseConfig);
+    const doc = transform(manager, {
+      id: 'pub-1', title: 'Public', slug: 'public',
+      html: '<p>Readable body</p>', excerpt: 'x', visibility: 'public',
+      published_at: '2024-02-09T19:00:00.000Z', updated_at: '2024-02-09T19:00:00.000Z'
+    });
+    expect(doc.visibility).toBe('public');
+    expect(String(doc.plaintext)).toContain('Readable body');
+  });
+
+  // Integration through indexPost (the path the webhook uses), driving the
+  // mocked Ghost API's gated post.
+  describe('indexPost', () => {
+    beforeEach(() => {
+      mockDocuments.upsert.mockClear();
+      mockDocuments.delete.mockClear();
+    });
+
+    it('removes a gated post (does not index it) when the flag is off', async () => {
+      const manager = new GhostTypesenseManager(baseConfig); // indexGatedContent undefined → off
+      await manager.indexPost('gated-post-1');
+
+      expect(mockDocuments.upsert).not.toHaveBeenCalled();
+      expect(mockDocuments.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('indexes a gated post as a redacted document when the flag is on', async () => {
+      const manager = new GhostTypesenseManager({
+        ...baseConfig,
+        collection: { ...baseConfig.collection, indexGatedContent: true }
+      });
+      await manager.indexPost('gated-post-1');
+
+      expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
+      const doc = mockDocuments.upsert.mock.calls[0]![0] as Record<string, unknown>;
+      expect(doc.visibility).toBe('members');
+      expect(doc.html).toBe('');
+      expect(JSON.stringify(doc)).not.toContain('SECRET_PROTECTED_BODY');
+    });
+
+    it('indexes a public post normally regardless of the flag', async () => {
+      const manager = new GhostTypesenseManager(baseConfig);
+      await manager.indexPost('test-post-1');
+
+      expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
+      expect(mockDocuments.delete).not.toHaveBeenCalled();
+    });
   });
 });

@@ -52,6 +52,34 @@ export const POSTS = [
     published_at: 1697000000000,
     tags: ['Ghost', 'Design'],
     authors: ['Sam']
+  },
+  // Gated posts, to demo the members-only badge and redaction. Their plaintext
+  // here represents the protected body — the mock responder and the seed must
+  // never expose it; only the excerpt (the public teaser) is searchable.
+  {
+    id: 'post-5',
+    title: 'Advanced soil chemistry for serious growers',
+    slug: 'advanced-soil-chemistry',
+    url: 'https://demo.example.com/advanced-soil-chemistry/',
+    excerpt: 'The full members-only guide to amending soil pH and nutrients.',
+    plaintext: 'MEMBERS_ONLY_BODY: detailed N-P-K ratios, chelated micronutrients, and lab testing protocols.',
+    feature_image: 'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=1200&q=80',
+    published_at: 1696000000000,
+    tags: ['Gardening'],
+    authors: ['Jannis'],
+    visibility: 'members'
+  },
+  {
+    id: 'post-6',
+    title: 'The complete Ghost performance course',
+    slug: 'ghost-performance-course',
+    url: 'https://demo.example.com/ghost-performance-course/',
+    excerpt: 'A paid deep-dive into squeezing every millisecond out of Ghost.',
+    plaintext: 'PAID_BODY: CDN tuning, image pipelines, server-timing budgets, and a full audit checklist.',
+    published_at: 1695000000000,
+    tags: ['Ghost', 'Design'],
+    authors: ['Sam'],
+    visibility: 'paid'
   }
 ];
 
@@ -89,12 +117,31 @@ function highlight(text, q) {
   return { snippet };
 }
 
+// The indexed representation of a post, mirroring what packages/core writes to
+// Typesense. Public posts keep their plaintext; gated (members/paid) posts are
+// redacted to the excerpt only, so their protected body is never searchable and
+// never returned — the same guarantee the real indexer provides.
+function toIndexedDoc(post) {
+  const visibility = post.visibility || 'public';
+  const { plaintext, html, ...rest } = post;
+  if (visibility === 'public') {
+    return { ...rest, ...(html !== undefined ? { html } : {}), plaintext, visibility };
+  }
+  // Mirror the core indexer: gated posts carry no body — empty html and
+  // excerpt-only plaintext.
+  return { ...rest, html: '', plaintext: post.excerpt || post.title || '', visibility };
+}
+
 export function mockSearchResponse(params = {}) {
   const q = (params.q || '').trim();
   const filters = parseFilterBy(params.filter_by);
   const facetBy = (params.facet_by || '').split(',').map((f) => f.trim()).filter(Boolean);
 
-  const filtered = POSTS.filter((p) => {
+  // Search against the redacted index view, never the raw posts, so a gated
+  // post's protected body is not even matchable.
+  const indexed = POSTS.map(toIndexedDoc);
+
+  const filtered = indexed.filter((p) => {
     if (!matchesFilters(p, filters)) return false;
     if (!q || q === '*') return true;
     const haystack = `${p.title} ${p.excerpt} ${p.plaintext} ${p.tags.join(' ')}`.toLowerCase();
