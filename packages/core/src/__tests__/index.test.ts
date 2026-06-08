@@ -212,3 +212,80 @@ describe('GhostTypesenseManager — semantic search', () => {
     expect('embedding' in document).toBe(false);
   });
 });
+
+describe('GhostTypesenseManager — gated content redaction', () => {
+  const baseConfig: Config = {
+    ghost: { url: 'https://test.com', key: 'test-key', version: 'v5.0' },
+    typesense: { nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }], apiKey: 'test-key' },
+    collection: {
+      name: 'test-collection',
+      fields: [
+        { name: 'id', type: 'string', optional: false },
+        { name: 'title', type: 'string', optional: false },
+        { name: 'slug', type: 'string', optional: false },
+        { name: 'html', type: 'string', optional: true },
+        { name: 'excerpt', type: 'string', optional: true },
+        { name: 'published_at', type: 'int64', optional: false },
+        { name: 'updated_at', type: 'int64', optional: false }
+      ]
+    }
+  };
+
+  // A members-only post whose body, if ever indexed, would contain this
+  // sentinel. The redaction must guarantee it never appears in the document.
+  const gatedPost = {
+    id: 'gated-1',
+    title: 'Members deep dive',
+    slug: 'members-deep-dive',
+    excerpt: 'A teaser anyone can read.',
+    html: '<p>SECRET_PROTECTED_BODY that must never be indexed.</p>',
+    plaintext: 'SECRET_PROTECTED_BODY that must never be indexed.',
+    visibility: 'members',
+    published_at: '2024-02-09T19:00:00.000Z',
+    updated_at: '2024-02-09T19:00:00.000Z',
+    tags: [{ name: 'Premium', slug: 'premium' }],
+    authors: [{ name: 'Author' }]
+  };
+
+  // transformPost is private; reach it for a focused unit test of redaction.
+  function transform(manager: GhostTypesenseManager, post: unknown) {
+    return (manager as unknown as { transformPost: (p: unknown) => Record<string, unknown> }).transformPost(post);
+  }
+
+  it('redacts a gated post: no protected body, preview-only plaintext, visibility set', () => {
+    const manager = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, indexGatedContent: true }
+    });
+    const doc = transform(manager, gatedPost);
+
+    expect(doc.visibility).toBe('members');
+    expect(doc.html).toBe('');
+    // The searchable text is the public excerpt, never the protected body.
+    expect(doc.plaintext).toBe('A teaser anyone can read.');
+    const serialized = JSON.stringify(doc);
+    expect(serialized).not.toContain('SECRET_PROTECTED_BODY');
+    // Public metadata is still indexed so the result is useful/discoverable.
+    expect(doc.tags).toEqual(['Premium']);
+  });
+
+  it('falls back to the title when a gated post has no excerpt', () => {
+    const manager = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, indexGatedContent: true }
+    });
+    const doc = transform(manager, { ...gatedPost, excerpt: '' });
+    expect(doc.plaintext).toBe('Members deep dive');
+  });
+
+  it('indexes public posts in full with visibility "public"', () => {
+    const manager = new GhostTypesenseManager(baseConfig);
+    const doc = transform(manager, {
+      id: 'pub-1', title: 'Public', slug: 'public',
+      html: '<p>Readable body</p>', excerpt: 'x', visibility: 'public',
+      published_at: '2024-02-09T19:00:00.000Z', updated_at: '2024-02-09T19:00:00.000Z'
+    });
+    expect(doc.visibility).toBe('public');
+    expect(String(doc.plaintext)).toContain('Readable body');
+  });
+});

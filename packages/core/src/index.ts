@@ -14,6 +14,7 @@ export interface Post {
   feature_image?: string;
   published_at: number;
   updated_at: number;
+  visibility?: string;
   'tags.name'?: string[];
   'tags.slug'?: string[];
   authors?: string[];
@@ -86,15 +87,80 @@ export class GhostTypesenseManager {
   }
 
   /**
+   * Copy tags, authors, and feature image onto a transformed document. Shared
+   * by the public and redacted paths — this is all public metadata, safe to
+   * index regardless of visibility.
+   * @private
+   */
+  private applyPostMetadata(post: GhostPost, transformed: Post): void {
+    if (post.feature_image) {
+      transformed.feature_image = post.feature_image;
+    }
+
+    const tags = post.tags;
+    if (tags && Array.isArray(tags) && tags.length > 0) {
+      transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
+      transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
+      transformed.tags = tags.map((tag: { name: string }) => tag.name);
+    }
+
+    const authors = post.authors;
+    if (authors && Array.isArray(authors) && authors.length > 0) {
+      transformed.authors = authors.map((author: { name: string }) => author.name);
+    }
+  }
+
+  /**
+   * Build a redacted document for a non-public (members-only / paid) post. The
+   * post's html and full plaintext are deliberately never read here, so no
+   * protected body text can enter the index. Searchable text is limited to the
+   * excerpt (the public teaser) and falls back to the title.
+   * @private
+   */
+  private buildRedactedPost(post: GhostPost, visibility: string): Post {
+    const excerpt = post.excerpt || '';
+    const preview = excerpt || post.title || '';
+
+    const transformed: Post = {
+      id: post.id,
+      title: post.title,
+      slug: post.slug,
+      url: post.url || `${this.config.ghost.url}/${post.slug}/`,
+      html: '',
+      plaintext: preview,
+      excerpt,
+      published_at: new Date(post.published_at || Date.now()).getTime(),
+      updated_at: new Date(post.updated_at || Date.now()).getTime(),
+      visibility
+    };
+
+    this.applyPostMetadata(post, transformed);
+    return transformed;
+  }
+
+  /**
    * Transform a Ghost post into the format expected by Typesense
    */
   private transformPost(post: GhostPost): Post {
     console.log('Transforming post:', post.id, post.title);
 
+    const visibility = (post as { visibility?: string }).visibility || 'public';
+    const isGated = visibility !== 'public';
+
+    // Gated (members-only / paid) posts are indexed as redacted documents: we
+    // never read their html/plaintext — even though the Content API already
+    // returns only the public preview for them, the body is ignored here by
+    // construction so no protected text can ever enter the index. The
+    // searchable text is limited to the excerpt (the public teaser), falling
+    // back to the title.
+    if (isGated) {
+      return this.buildRedactedPost(post, visibility);
+    }
+
     // Ensure we have plaintext content
     let plaintext = post.plaintext || '';
 
-    // Always try to enhance/improve plaintext extraction from HTML 
+    // Always try to enhance/improve plaintext extraction from HTML
     // even if plaintext already exists
     if (post.html) {
       // Use a more comprehensive approach to extract text including from links and special formatting
@@ -140,27 +206,11 @@ export class GhostTypesenseManager {
       plaintext: plaintext,
       excerpt: post.excerpt || '',
       published_at: new Date(post.published_at || Date.now()).getTime(),
-      updated_at: new Date(post.updated_at || Date.now()).getTime()
+      updated_at: new Date(post.updated_at || Date.now()).getTime(),
+      visibility: 'public'
     };
 
-    if (post.feature_image) {
-      transformed.feature_image = post.feature_image;
-    }
-
-    const tags = post.tags;
-    if (tags && Array.isArray(tags) && tags.length > 0) {
-      // Use dot notation for nested tag fields
-      transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
-      transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
-      
-      // Add the standard tags field that Typesense expects as string[]
-      transformed.tags = tags.map((tag: { name: string }) => tag.name);
-    }
-
-    const authors = post.authors;
-    if (authors && Array.isArray(authors) && authors.length > 0) {
-      transformed.authors = authors.map((author: { name: string }) => author.name);
-    }
+    this.applyPostMetadata(post, transformed);
 
     // Add any additional fields specified in the config
     // Only add fields that haven't already been transformed to avoid overriding custom transformations
@@ -240,8 +290,14 @@ export class GhostTypesenseManager {
       allPosts = allPosts.concat(pageResponse.data);
     }
 
-    console.log(`Found ${allPosts.length} posts to index`);
-    const documents = allPosts.map((post) => this.transformPost(post));
+    // Unless gated indexing is opted into, drop non-public posts so only
+    // public published content is indexed (the default behaviour).
+    const postsToIndex = this.config.collection.indexGatedContent
+      ? allPosts
+      : allPosts.filter((post) => ((post as { visibility?: string }).visibility || 'public') === 'public');
+
+    console.log(`Found ${postsToIndex.length} posts to index (of ${allPosts.length} fetched)`);
+    const documents = postsToIndex.map((post) => this.transformPost(post));
 
     // Use batched bulk import for better performance and reliability
     await this.indexDocumentsBatched(documents);
@@ -457,8 +513,18 @@ export class GhostTypesenseManager {
       throw new Error(`Failed to fetch post ${postId} from Ghost`);
     }
 
-    const document = this.transformPost(post.data);
+    const visibility = (post.data as { visibility?: string }).visibility || 'public';
     const collection = this.typesense.collections(this.collectionName);
+
+    // Respect the opt-in: with gated indexing off, a non-public post must not
+    // be indexed. Remove any existing document (e.g. a post that just turned
+    // members-only) rather than upserting it.
+    if (visibility !== 'public' && !this.config.collection.indexGatedContent) {
+      await collection.documents().delete({ filter_by: `id:${postId}` }).catch(() => {});
+      return;
+    }
+
+    const document = this.transformPost(post.data);
     await collection.documents().upsert(document);
   }
 

@@ -212,3 +212,26 @@ describe('Semantic search field', () => {
     ).toThrow();
   });
 });
+
+describe('Gated content config', () => {
+  const base = {
+    ghost: { url: 'https://example.com', key: 'valid-key', version: 'v5.0' },
+    typesense: { nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }], apiKey: 'valid-key' }
+  };
+
+  it('treats a missing indexGatedContent as off (falsy)', () => {
+    const config = validateConfig({ ...base, collection: { name: 'posts' } });
+    expect(config.collection.indexGatedContent).toBeFalsy();
+  });
+
+  it('accepts indexGatedContent: true', () => {
+    const config = validateConfig({ ...base, collection: { name: 'posts', indexGatedContent: true } });
+    expect(config.collection.indexGatedContent).toBe(true);
+  });
+
+  it('includes an optional visibility field in the default schema', () => {
+    const field = DEFAULT_COLLECTION_FIELDS.find((f) => f.name === 'visibility');
+    expect(field).toBeDefined();
+    expect(field?.optional).toBe(true);
+  });
+});

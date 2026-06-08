@@ -10,7 +10,10 @@ const EnvSchema = z.object({
   TYPESENSE_HOST: z.string().min(1),
   TYPESENSE_API_KEY: z.string().min(1),
   COLLECTION_NAME: z.string().min(1).default('posts'),
-  WEBHOOK_SECRET: z.string().min(1)
+  WEBHOOK_SECRET: z.string().min(1),
+  // Opt-in: set to "true" to index members-only / paid posts as redacted
+  // documents. Defaults off, so only public posts are indexed.
+  INDEX_GATED_CONTENT: z.string().optional()
 });
 
 // Ghost webhook payload schema
@@ -82,6 +85,9 @@ const handler: Handler = async (event) => {
       env.TYPESENSE_API_KEY,
       env.COLLECTION_NAME
     );
+    // Opt-in: index members-only / paid posts as redacted documents.
+    const indexGatedContent = env.INDEX_GATED_CONTENT === 'true';
+    config.collection.indexGatedContent = indexGatedContent;
     console.log('⚙️  Configuration loaded');
 
     // Initialize manager
@@ -112,7 +118,12 @@ const handler: Handler = async (event) => {
       const { id, status, visibility, title } = post.current;
       console.log(`📄 Processing post: "${title}" (${id})`);
       
-      if (status === 'published' && visibility === 'public') {
+      // Index public posts always; index gated posts only when opted in (core
+      // redacts them). indexPost itself removes a gated post when the flag is
+      // off, so anything published is safe to route through it here.
+      const indexable = status === 'published' && (visibility === 'public' || indexGatedContent);
+
+      if (indexable) {
         console.log('📝 Indexing published post');
         await manager.indexPost(id);
         console.log('✨ Post indexed successfully');

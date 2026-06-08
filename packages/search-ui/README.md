@@ -280,6 +280,14 @@ Behaviour:
 - Selections can be cleared individually (toggling a chip off) or all at once via the **Clear filters** button.
 - A publisher-provided `typesenseSearchParams.filter_by` is **preserved**: facet selections are AND-ed with it rather than overwriting it.
 
+## Members-only results
+
+When the index includes gated (members-only / paid) posts — see [indexing members-only content](../../README.md#members-only-content) on the indexing side — the widget marks those results with a small **"members only"** badge. No widget configuration is needed; it keys off the `visibility` field on each result and requests that field automatically.
+
+Gated results carry a `mp-search-result-gated` class and a `data-gated="<visibility>"` attribute on the result link, so you can style them or wire clicks to a membership/upsell flow with your own theme code. The badge text is translatable via the `membersLabel` / `ariaMembersLabel` keys (see [Internationalization](#internationalization-i18n)).
+
+Because gated posts are indexed as redacted documents (excerpt/preview only), there is no protected body text in the results to expose.
+
 ## Semantic search
 
 Semantic (hybrid) search is **opt-in and disabled by default**. By default the widget runs purely lexical queries — keyword matching with prefix matching, optional typo tolerance, and field weighting.
@@ -438,6 +446,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `ariaModalLabel` | "Search" | ARIA label for modal |
 | `ariaFacetsLabel` | "Filters" | ARIA label for the facet filter group |
 | `clearFiltersLabel` | "Clear filters" | Label for the button that clears active facet filters |
+| `membersLabel` | "Members only" | Badge text on gated (members-only / paid) results |
+| `ariaMembersLabel` | "Members-only content" | ARIA label for the members-only badge |
 | `untitledPost` | "Untitled" | Fallback for posts without titles |
 
 ### Example Translations
