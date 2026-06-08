@@ -45,7 +45,9 @@ const schema = {
     { name: 'tags', type: 'string[]', facet: true, optional: true },
     { name: 'tags.name', type: 'string[]', facet: true, optional: true },
     { name: 'tags.slug', type: 'string[]', facet: true, optional: true },
-    { name: 'authors', type: 'string[]', facet: true, optional: true }
+    { name: 'authors', type: 'string[]', facet: true, optional: true },
+    // Lets the widget show the members-only badge on gated results.
+    { name: 'visibility', type: 'string', facet: true, optional: true }
   ]
 };
 
@@ -104,6 +106,29 @@ async function createCollection() {
   return false;
 }
 
+// Creating an embedding collection returns as soon as the schema is registered,
+// but the model keeps loading asynchronously — importing documents before it is
+// ready fails with a 404 / "not ready". Poll a trivial search until it
+// succeeds so the import doesn't race the model.
+async function waitForModelReady() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      await client.collections(COLLECTION).documents().search({ q: '*', query_by: 'embedding' });
+      return; // model is serving queries
+    } catch (err) {
+      const msg = String(err?.message || err).toLowerCase();
+      // 404 / not-ready while the model loads — keep waiting. Anything else is
+      // a real error worth surfacing.
+      if (!(msg.includes('not found') || msg.includes('not ready') || msg.includes('404'))) {
+        return;
+      }
+      if (attempt === 1) console.log('▸ Waiting for the embedding model to finish loading …');
+      await sleep(2000);
+    }
+  }
+}
+
 async function main() {
   try {
     await client.collections(COLLECTION).delete();
@@ -112,19 +137,29 @@ async function main() {
     // Collection didn't exist yet — fine.
   }
 
-  await createCollection();
+  const embeddingEnabled = await createCollection();
+  if (embeddingEnabled) {
+    await waitForModelReady();
+  }
 
   const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const documents = POSTS.map(({ feature_image, tags = [], ...rest }) => ({
-    ...rest,
-    tags,
-    // The widget's default query_by/facets use the nested fields, so provide
-    // them the way packages/core does.
-    'tags.name': tags,
-    'tags.slug': tags.map(slugify),
-    // Typesense rejects null for an optional string; omit instead.
-    ...(feature_image ? { feature_image } : {})
-  }));
+  const documents = POSTS.map(({ feature_image, tags = [], plaintext, ...rest }) => {
+    const visibility = rest.visibility || 'public';
+    return {
+      ...rest,
+      visibility,
+      // Redact gated posts the way packages/core does: the protected body never
+      // reaches Typesense — only the excerpt (the public teaser) is searchable.
+      plaintext: visibility === 'public' ? plaintext : rest.excerpt || rest.title || '',
+      tags,
+      // The widget's default query_by/facets use the nested fields, so provide
+      // them the way packages/core does.
+      'tags.name': tags,
+      'tags.slug': tags.map(slugify),
+      // Typesense rejects null for an optional string; omit instead.
+      ...(feature_image ? { feature_image } : {})
+    };
+  });
 
   const results = await client.collections(COLLECTION).documents().import(documents, { action: 'upsert' });
   const failed = results.filter((r) => !r.success);

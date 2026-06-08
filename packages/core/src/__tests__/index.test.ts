@@ -33,22 +33,43 @@ vi.mock('@ts-ghost/content-api', () => {
             })
           })
         }),
-        read: () => ({
+        // `read` returns a public post by default, or a members-only post when
+        // asked for the gated id — so the gated indexPost paths can be tested.
+        read: ({ id }: { id: string }) => ({
           include: () => ({
-            fetch: async () => ({
-              success: true,
-              data: {
-                id: 'test-post-1',
-                title: 'Test Post 1',
-                slug: 'test-post-1',
-                html: '<p>Test content</p>',
-                excerpt: 'Test excerpt',
-                published_at: '2024-02-09T19:00:00.000Z',
-                updated_at: '2024-02-09T19:00:00.000Z',
-                tags: [{ name: 'test-tag' }],
-                authors: [{ name: 'Test Author' }]
-              }
-            })
+            fetch: async () =>
+              id === 'gated-post-1'
+                ? {
+                    success: true,
+                    data: {
+                      id: 'gated-post-1',
+                      title: 'Members Post',
+                      slug: 'members-post',
+                      html: '<p>SECRET_PROTECTED_BODY for members only.</p>',
+                      plaintext: 'SECRET_PROTECTED_BODY for members only.',
+                      excerpt: 'A public teaser.',
+                      visibility: 'members',
+                      published_at: '2024-02-09T19:00:00.000Z',
+                      updated_at: '2024-02-09T19:00:00.000Z',
+                      tags: [{ name: 'premium', slug: 'premium' }],
+                      authors: [{ name: 'Test Author' }]
+                    }
+                  }
+                : {
+                    success: true,
+                    data: {
+                      id: 'test-post-1',
+                      title: 'Test Post 1',
+                      slug: 'test-post-1',
+                      html: '<p>Test content</p>',
+                      excerpt: 'Test excerpt',
+                      visibility: 'public',
+                      published_at: '2024-02-09T19:00:00.000Z',
+                      updated_at: '2024-02-09T19:00:00.000Z',
+                      tags: [{ name: 'test-tag' }],
+                      authors: [{ name: 'Test Author' }]
+                    }
+                  }
           })
         })
       }
@@ -287,5 +308,44 @@ describe('GhostTypesenseManager — gated content redaction', () => {
     });
     expect(doc.visibility).toBe('public');
     expect(String(doc.plaintext)).toContain('Readable body');
+  });
+
+  // Integration through indexPost (the path the webhook uses), driving the
+  // mocked Ghost API's gated post.
+  describe('indexPost', () => {
+    beforeEach(() => {
+      mockDocuments.upsert.mockClear();
+      mockDocuments.delete.mockClear();
+    });
+
+    it('removes a gated post (does not index it) when the flag is off', async () => {
+      const manager = new GhostTypesenseManager(baseConfig); // indexGatedContent undefined → off
+      await manager.indexPost('gated-post-1');
+
+      expect(mockDocuments.upsert).not.toHaveBeenCalled();
+      expect(mockDocuments.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('indexes a gated post as a redacted document when the flag is on', async () => {
+      const manager = new GhostTypesenseManager({
+        ...baseConfig,
+        collection: { ...baseConfig.collection, indexGatedContent: true }
+      });
+      await manager.indexPost('gated-post-1');
+
+      expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
+      const doc = mockDocuments.upsert.mock.calls[0]![0] as Record<string, unknown>;
+      expect(doc.visibility).toBe('members');
+      expect(doc.html).toBe('');
+      expect(JSON.stringify(doc)).not.toContain('SECRET_PROTECTED_BODY');
+    });
+
+    it('indexes a public post normally regardless of the flag', async () => {
+      const manager = new GhostTypesenseManager(baseConfig);
+      await manager.indexPost('test-post-1');
+
+      expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
+      expect(mockDocuments.delete).not.toHaveBeenCalled();
+    });
   });
 });
