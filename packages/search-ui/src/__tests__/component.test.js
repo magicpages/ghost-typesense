@@ -42,6 +42,28 @@ describe('getSearchParameters — lexical baseline', () => {
   });
 });
 
+describe('getSearchParameters — semantic search', () => {
+  it('appends the embedding field to query_by when enabled', () => {
+    const params = mountWithConfig({ semanticSearch: true }).getSearchParameters();
+    expect(params.query_by.split(',')).toContain('embedding');
+  });
+
+  it('keeps query_by_weights the same length as query_by (Typesense requires it)', () => {
+    const params = mountWithConfig({ semanticSearch: true }).getSearchParameters();
+    expect(params.query_by_weights.split(',').length).toBe(params.query_by.split(',').length);
+  });
+
+  it('respects a custom embeddingFieldName', () => {
+    const params = mountWithConfig({ semanticSearch: true, embeddingFieldName: 'vec' }).getSearchParameters();
+    expect(params.query_by.split(',')).toContain('vec');
+  });
+
+  it('does not touch query_by when disabled', () => {
+    const params = mountWithConfig().getSearchParameters();
+    expect(params.query_by.split(',')).not.toContain('embedding');
+  });
+});
+
 describe('getSearchParameters — facets', () => {
   const facetConfig = {
     facets: [
