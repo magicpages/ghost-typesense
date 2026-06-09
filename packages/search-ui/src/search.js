@@ -324,12 +324,15 @@ import Typesense from 'typesense';
             return !!(this.config.analytics && this.config.analytics.endpoint);
         }
 
-        // Send a single analytics event. Uses navigator.sendBeacon so events
-        // survive page navigation (clicking a result unloads the page) and
-        // never block the UI thread, falling back to fetch(keepalive) where
-        // sendBeacon is unavailable. Fully fail-silent: any transport error,
-        // or a non-2xx response, must never surface to the reader or break
-        // search.
+        // Send a single analytics event. Prefers fetch(keepalive): it is
+        // fire-and-forget, survives the page unload triggered by clicking a
+        // result (that is what `keepalive` is for), and — unlike the Beacon
+        // API — is not cancelled wholesale by content blockers. uBlock Origin
+        // and similar block navigator.sendBeacon broadly, regardless of the
+        // destination, so preferring it silently drops events for any reader
+        // running a blocker. sendBeacon is kept only as a fallback for the rare
+        // engine without fetch. Fully fail-silent: any transport error, or a
+        // non-2xx response, must never surface to the reader or break search.
         sendAnalyticsEvent(event) {
             if (!this.isAnalyticsEnabled()) return;
 
@@ -343,22 +346,25 @@ import Typesense from 'typesense';
                 };
                 const body = JSON.stringify(payload);
 
-                // sendBeacon is the preferred transport: it is fire-and-forget
-                // and is not cancelled when the document starts unloading.
-                if (navigator.sendBeacon) {
-                    const blob = new Blob([body], { type: 'application/json' });
-                    if (navigator.sendBeacon(endpoint, blob)) return;
+                // Preferred transport: keepalive fetch completes across page
+                // unloads and isn't caught by Beacon-API filters.
+                if (typeof fetch === 'function') {
+                    fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body,
+                        keepalive: true,
+                        mode: 'cors',
+                        credentials: 'omit'
+                    }).catch(() => {});
+                    return;
                 }
 
-                // Fallback for environments without sendBeacon.
-                fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body,
-                    keepalive: true,
-                    mode: 'cors',
-                    credentials: 'omit'
-                }).catch(() => {});
+                // Fallback for environments without fetch.
+                if (navigator.sendBeacon) {
+                    const blob = new Blob([body], { type: 'application/json' });
+                    navigator.sendBeacon(endpoint, blob);
+                }
             } catch {
                 // Swallow everything — analytics must never affect search.
             }
