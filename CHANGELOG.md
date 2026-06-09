@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-06-09
+
+### Fixed
+- **Republished with the correct build artifacts.** The `2.0.0` and `2.0.1` npm
+  packages were published with a stale `dist/` that predated the 2.0 features —
+  the bundle contained no semantic-search or `uiStyle` layout code, and the
+  `palette.min.js` / `discovery.min.js` chunks were missing entirely. As a
+  result, sites updated to `2.0.0`/`2.0.1` silently kept running keyword-only
+  search even with `semanticSearch` enabled. `2.0.2` ships the correctly built
+  bundle (semantic/hybrid querying, the three `uiStyle` layouts, and the layout
+  chunks). No source changes versus 2.0.0 — this is a build/release fix only.
+  Update to `2.0.2`; `2.0.0` and `2.0.1` should not be used.
+
+## [2.0.1] - 2026-06-09
+
+### Fixed
+- Attempted republish of 2.0.0 to correct the stale build artifacts; the
+  packaged `dist/` was still incorrect. Superseded by 2.0.2 — do not use.
+
 ## [2.0.0] - 2026-06-08
 
 A major release that turns the search UI from a single modal into a configurable
