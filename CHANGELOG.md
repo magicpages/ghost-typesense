@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-06-09
+
+### Fixed
+- **Analytics events were dropped for readers running content blockers.** The
+  emitter preferred `navigator.sendBeacon`, which uBlock Origin and similar
+  block broadly regardless of destination — and the `fetch(keepalive)` fallback
+  only ran when `sendBeacon` was *absent*, not when it was present-but-blocked,
+  so the event was simply lost. `fetch(keepalive)` is now the primary transport
+  (it survives page unload and isn't caught by Beacon-API filters); `sendBeacon`
+  remains only as a fallback for engines without `fetch`. Behaviour is otherwise
+  unchanged — analytics stays fully fail-silent and never affects search.
+
 ## [2.0.2] - 2026-06-09
 
 ### Fixed
