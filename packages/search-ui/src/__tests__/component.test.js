@@ -145,27 +145,47 @@ describe('getSearchParameters — visibility include_fields', () => {
 });
 
 describe('analytics events', () => {
+  let fetchMock;
   let beacon;
   beforeEach(() => {
+    // fetch(keepalive) is the preferred transport (Beacon API is blocked by
+    // content blockers). sendBeacon stays mocked so we can assert it is NOT
+    // used while fetch is available.
+    fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    global.fetch = fetchMock;
     beacon = vi.fn(() => true);
     navigator.sendBeacon = beacon;
   });
 
   it('emits one search event for a settled query and dedupes a repeat', () => {
-    const el = mountWithConfig({ analytics: { endpoint: 'https://e/collect', siteId: 's' } });
+    const el = mountWithConfig({ analytics: { endpoint: 'https://e/queries', siteId: 's' } });
 
     el.trackSearch('ghost', 3);
     el.trackSearch('ghost', 3); // same query → suppressed by lastTrackedQuery
     el.trackSearch('themes', 0); // new query, zero results → search + zero_result
 
-    // ghost(search) + themes(search) + themes(zero_result) = 3 beacons; the
+    // ghost(search) + themes(search) + themes(zero_result) = 3 events; the
     // repeated "ghost" call emits nothing.
-    expect(beacon).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('prefers fetch(keepalive) over sendBeacon as the transport', () => {
+    const el = mountWithConfig({ analytics: { endpoint: 'https://e/queries', siteId: 's' } });
+
+    el.trackSearch('ghost', 3);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(beacon).not.toHaveBeenCalled();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://e/queries');
+    expect(init.method).toBe('POST');
+    expect(init.keepalive).toBe(true);
   });
 
   it('emits nothing when analytics is not configured', () => {
     const el = mountWithConfig();
     el.trackSearch('ghost', 3);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(beacon).not.toHaveBeenCalled();
   });
 });
