@@ -87,9 +87,26 @@ export class GhostTypesenseManager {
   }
 
   /**
+   * Is this an internal (organisational) Ghost tag? Ghost marks these with
+   * `visibility: 'internal'`, a `#`-prefixed name, and a `hash-` slug, and hides
+   * them from public output (the `{{tags}}` theme helper excludes them). The
+   * search index is public output, so internal tags must not be indexed,
+   * faceted, or shown — any of the three signals is enough to identify one.
+   * @private
+   */
+  private static isInternalTag(tag: { name?: string; slug?: string; visibility?: string }): boolean {
+    return (
+      tag.visibility === 'internal' ||
+      (typeof tag.name === 'string' && tag.name.startsWith('#')) ||
+      (typeof tag.slug === 'string' && tag.slug.startsWith('hash-'))
+    );
+  }
+
+  /**
    * Copy tags, authors, and feature image onto a transformed document. Shared
    * by the public and redacted paths — this is all public metadata, safe to
-   * index regardless of visibility.
+   * index regardless of visibility. Internal tags are filtered out so they
+   * never enter the index (mirroring how Ghost hides them from public output).
    * @private
    */
   private applyPostMetadata(post: GhostPost, transformed: Post): void {
@@ -99,9 +116,15 @@ export class GhostTypesenseManager {
 
     const tags = post.tags;
     if (tags && Array.isArray(tags) && tags.length > 0) {
-      transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
-      transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
-      transformed.tags = tags.map((tag: { name: string }) => tag.name);
+      const publicTags = tags.filter(
+        (tag: { name?: string; slug?: string; visibility?: string }) =>
+          !GhostTypesenseManager.isInternalTag(tag)
+      );
+      if (publicTags.length > 0) {
+        transformed['tags.name'] = publicTags.map((tag: { name: string }) => tag.name);
+        transformed['tags.slug'] = publicTags.map((tag: { slug: string }) => tag.slug);
+        transformed.tags = publicTags.map((tag: { name: string }) => tag.name);
+      }
     }
 
     const authors = post.authors;

@@ -310,6 +310,37 @@ describe('GhostTypesenseManager — gated content redaction', () => {
     expect(String(doc.plaintext)).toContain('Readable body');
   });
 
+  it('excludes internal tags from the index (by visibility, # name, or hash- slug)', () => {
+    const manager = new GhostTypesenseManager(baseConfig);
+    const doc = transform(manager, {
+      id: 'pub-2', title: 'Tagged', slug: 'tagged',
+      html: '<p>Body</p>', excerpt: 'x', visibility: 'public',
+      published_at: '2024-02-09T19:00:00.000Z', updated_at: '2024-02-09T19:00:00.000Z',
+      tags: [
+        { name: 'Magic Pages Blog', slug: 'blog', visibility: 'public' },
+        { name: '#updates', slug: 'hash-updates', visibility: 'internal' },
+        // Defensive: an internal tag identifiable only by its name/slug shape.
+        { name: '#podcast', slug: 'hash-podcast' }
+      ]
+    });
+    expect(doc.tags).toEqual(['Magic Pages Blog']);
+    expect(doc['tags.name']).toEqual(['Magic Pages Blog']);
+    expect(doc['tags.slug']).toEqual(['blog']);
+  });
+
+  it('leaves tag fields unset when a post has only internal tags', () => {
+    const manager = new GhostTypesenseManager(baseConfig);
+    const doc = transform(manager, {
+      id: 'pub-3', title: 'Internal only', slug: 'internal-only',
+      html: '<p>Body</p>', excerpt: 'x', visibility: 'public',
+      published_at: '2024-02-09T19:00:00.000Z', updated_at: '2024-02-09T19:00:00.000Z',
+      tags: [{ name: '#updates', slug: 'hash-updates', visibility: 'internal' }]
+    });
+    expect(doc.tags).toBeUndefined();
+    expect(doc['tags.name']).toBeUndefined();
+    expect(doc['tags.slug']).toBeUndefined();
+  });
+
   // Integration through indexPost (the path the webhook uses), driving the
   // mocked Ghost API's gated post.
   describe('indexPost', () => {
