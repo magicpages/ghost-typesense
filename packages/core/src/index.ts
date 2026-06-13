@@ -3,6 +3,13 @@ import { Client } from 'typesense';
 import type { CollectionFieldSchema } from 'typesense/lib/Typesense/Collection';
 import type { Config } from '@magicpages/ghost-typesense-config';
 
+/**
+ * A single tag as it appears on a Ghost post, derived from the Content API's
+ * own Post type so `name`/`slug`/`visibility` stay accurately typed (all
+ * required) and in sync with the upstream schema.
+ */
+type GhostTag = NonNullable<GhostPost['tags']>[number];
+
 export interface Post {
   id: string;
   title: string;
@@ -92,9 +99,11 @@ export class GhostTypesenseManager {
    * them from public output (the `{{tags}}` theme helper excludes them). The
    * search index is public output, so internal tags must not be indexed,
    * faceted, or shown — any of the three signals is enough to identify one.
+   * The field guards keep a malformed/partial tag from crashing the whole
+   * post's indexing.
    * @private
    */
-  private static isInternalTag(tag: { name?: string; slug?: string; visibility?: string }): boolean {
+  private static isInternalTag(tag: GhostTag): boolean {
     return (
       tag.visibility === 'internal' ||
       (typeof tag.name === 'string' && tag.name.startsWith('#')) ||
@@ -116,14 +125,11 @@ export class GhostTypesenseManager {
 
     const tags = post.tags;
     if (tags && Array.isArray(tags) && tags.length > 0) {
-      const publicTags = tags.filter(
-        (tag: { name?: string; slug?: string; visibility?: string }) =>
-          !GhostTypesenseManager.isInternalTag(tag)
-      );
+      const publicTags = tags.filter((tag) => !GhostTypesenseManager.isInternalTag(tag));
       if (publicTags.length > 0) {
-        transformed['tags.name'] = publicTags.map((tag: { name: string }) => tag.name);
-        transformed['tags.slug'] = publicTags.map((tag: { slug: string }) => tag.slug);
-        transformed.tags = publicTags.map((tag: { name: string }) => tag.name);
+        transformed['tags.name'] = publicTags.map((tag) => tag.name);
+        transformed['tags.slug'] = publicTags.map((tag) => tag.slug);
+        transformed.tags = publicTags.map((tag) => tag.name);
       }
     }
 
