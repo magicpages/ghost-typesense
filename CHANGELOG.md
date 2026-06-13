@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Internal tags were indexed and shown in results.** Ghost internal tags
+  (`visibility: 'internal'`, `#`-prefixed name, `hash-` slug) — which Ghost hides
+  from public output — were written into the `tags` / `tags.name` / `tags.slug`
+  fields, so they were searchable, facetable, and displayed in the result meta
+  line. The indexer now filters them out, matching Ghost's public-output
+  behaviour. Existing collections need a reindex to drop already-indexed
+  internal tags.
+
 ## [2.0.3] - 2026-06-09
 
 ### Fixed
