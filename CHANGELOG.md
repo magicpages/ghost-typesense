@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.4] - 2026-06-13
 
 ### Fixed
 - **Internal tags were indexed and shown in results.** Ghost internal tags
@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line. The indexer now filters them out, matching Ghost's public-output
   behaviour. Existing collections need a reindex to drop already-indexed
   internal tags.
+
+### Changed
+- Added a `prepublishOnly` build step to the search-ui package so the published
+  `dist/` can never go stale relative to source (the failure mode behind the
+  bad 2.0.0 / 2.0.1 publishes).
 
 ## [2.0.3] - 2026-06-09
 
