@@ -3,6 +3,13 @@ import { Client } from 'typesense';
 import type { CollectionFieldSchema } from 'typesense/lib/Typesense/Collection';
 import type { Config } from '@magicpages/ghost-typesense-config';
 
+/**
+ * A single tag as it appears on a Ghost post, derived from the Content API's
+ * own Post type so `name`/`slug`/`visibility` stay accurately typed (all
+ * required) and in sync with the upstream schema.
+ */
+type GhostTag = NonNullable<GhostPost['tags']>[number];
+
 export interface Post {
   id: string;
   title: string;
@@ -87,9 +94,28 @@ export class GhostTypesenseManager {
   }
 
   /**
+   * Is this an internal (organisational) Ghost tag? Ghost marks these with
+   * `visibility: 'internal'`, a `#`-prefixed name, and a `hash-` slug, and hides
+   * them from public output (the `{{tags}}` theme helper excludes them). The
+   * search index is public output, so internal tags must not be indexed,
+   * faceted, or shown — any of the three signals is enough to identify one.
+   * The field guards keep a malformed/partial tag from crashing the whole
+   * post's indexing.
+   * @private
+   */
+  private static isInternalTag(tag: GhostTag): boolean {
+    return (
+      tag.visibility === 'internal' ||
+      (typeof tag.name === 'string' && tag.name.startsWith('#')) ||
+      (typeof tag.slug === 'string' && tag.slug.startsWith('hash-'))
+    );
+  }
+
+  /**
    * Copy tags, authors, and feature image onto a transformed document. Shared
    * by the public and redacted paths — this is all public metadata, safe to
-   * index regardless of visibility.
+   * index regardless of visibility. Internal tags are filtered out so they
+   * never enter the index (mirroring how Ghost hides them from public output).
    * @private
    */
   private applyPostMetadata(post: GhostPost, transformed: Post): void {
@@ -99,9 +125,12 @@ export class GhostTypesenseManager {
 
     const tags = post.tags;
     if (tags && Array.isArray(tags) && tags.length > 0) {
-      transformed['tags.name'] = tags.map((tag: { name: string }) => tag.name);
-      transformed['tags.slug'] = tags.map((tag: { slug: string }) => tag.slug);
-      transformed.tags = tags.map((tag: { name: string }) => tag.name);
+      const publicTags = tags.filter((tag) => !GhostTypesenseManager.isInternalTag(tag));
+      if (publicTags.length > 0) {
+        transformed['tags.name'] = publicTags.map((tag) => tag.name);
+        transformed['tags.slug'] = publicTags.map((tag) => tag.slug);
+        transformed.tags = publicTags.map((tag) => tag.name);
+      }
     }
 
     const authors = post.authors;
