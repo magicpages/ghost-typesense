@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense-search-ui",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "A vanilla JavaScript search UI for Ghost + Typesense integration",
   "type": "module",
   "main": "dist/search.min.js",
@@ -13,7 +13,8 @@
     "test": "vitest run",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write src/**/*.{js,css}",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "ghost",
