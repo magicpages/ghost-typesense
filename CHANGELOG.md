@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-06-22
+
+### Fixed
+- **Search failed to load on pages that define a global `t`.** The search-ui
+  bundles injected their inlined CSS via Rollup's `banner` option, which emits
+  code *outside* the IIFE wrapper — so `BUNDLED_CSS` (and the layouts'
+  `LAYOUT_CSS`) sat at global scope, where terser's `toplevel` mangle renamed it
+  to a single-letter global lexical `const t`. On any page where another script
+  already defines a global `t` (common in minified Ghost/theme bundles), the
+  redeclaration threw `Identifier 't' has already been declared` on the first
+  line of `search.min.js`. A top-level `SyntaxError` aborts the *entire* script
+  before its IIFE runs, so `window.MagicPagesSearch` was never defined and search
+  silently failed to load. The CSS is now injected via `intro`, which is emitted
+  *inside* the IIFE, keeping the constant function-scoped so it can no longer
+  leak to the global object or collide. Affects the core, palette, and discovery
+  bundles. No source changes — build/release fix only; update and redeploy the
+  rebuilt bundle.
+
 ## [2.0.4] - 2026-06-13
 
 ### Fixed
