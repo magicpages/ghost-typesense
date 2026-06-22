@@ -42,6 +42,12 @@ const plugins = () => [
 const treeshake = { preset: 'recommended', moduleSideEffects: true, propertyReadSideEffects: true };
 const generatedCode = { preset: 'es2015', constBindings: true };
 
+// Every bundle injects its inlined CSS via `intro` (NOT `banner`). `intro` is
+// emitted INSIDE the IIFE wrapper, so the CSS constant stays function-scoped.
+// With `banner` it landed at global scope, where terser's toplevel mangle
+// renamed it to `const t` — a global lexical that throws "Identifier 't' has
+// already been declared" whenever another page script defines a global `t`,
+// aborting the whole bundle before it can run.
 export default [
   // Core bundle: widget engine + the default inline modal layout. This is the
   // single classic <script> every install loads today — unchanged contract.
@@ -54,7 +60,7 @@ export default [
       name: 'MagicPagesSearch',
       inlineDynamicImports: true,
       generatedCode,
-      banner: `const BUNDLED_CSS = ${JSON.stringify(coreCss)};`
+      intro: `const BUNDLED_CSS = ${JSON.stringify(coreCss)};`
     },
     plugins: plugins()
   },
@@ -70,7 +76,7 @@ export default [
       name: 'MagicPagesSearchPalette',
       inlineDynamicImports: true,
       generatedCode,
-      banner: `const LAYOUT_CSS = ${JSON.stringify(paletteCss)};`
+      intro: `const LAYOUT_CSS = ${JSON.stringify(paletteCss)};`
     },
     plugins: plugins()
   },
@@ -84,7 +90,7 @@ export default [
       name: 'MagicPagesSearchDiscovery',
       inlineDynamicImports: true,
       generatedCode,
-      banner: `const LAYOUT_CSS = ${JSON.stringify(discoveryCss)};`
+      intro: `const LAYOUT_CSS = ${JSON.stringify(discoveryCss)};`
     },
     plugins: plugins()
   }
