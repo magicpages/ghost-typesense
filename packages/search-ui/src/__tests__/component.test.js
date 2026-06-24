@@ -345,3 +345,107 @@ describe('result templates', () => {
     expect(gridFields).toContain('authors');
   });
 });
+
+describe('highlight snippet selection', () => {
+  // Regression for the "Maira" case: the term matched in the body (plaintext)
+  // but not in the excerpt. The preview must show the highlighted body snippet,
+  // not the (unhighlighted) raw excerpt that pre-empted it before.
+  it('normalizeHit uses the body snippet when only plaintext matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: {
+        id: 'p1',
+        title: 'Interview With a TPP Critic',
+        excerpt: 'Having observed critics of trade agreements for around 20 years now...',
+        plaintext: 'of them! I follow Maira Sutton of the Electronic Frontier Foundation'
+      },
+      highlight: {
+        plaintext: {
+          matched_tokens: ['Maira'],
+          snippet: 'of them! I follow <mark>Maira</mark> Sutton of the Electronic'
+        }
+      }
+    };
+    const m = el.normalizeHit(hit, 0);
+    expect(m.excerptHtml).toContain('<mark>Maira</mark>');
+    expect(m.excerptHtml).not.toContain('Having observed critics');
+  });
+
+  it('normalizeHit prefers the excerpt snippet when the excerpt matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: { id: 'p1', title: 'T', excerpt: 'A tariff explainer', plaintext: 'body text' },
+      highlight: {
+        excerpt: { matched_tokens: ['tariff'], snippet: 'A <mark>tariff</mark> explainer' },
+        plaintext: { matched_tokens: ['tariff'], snippet: 'body <mark>tariff</mark> text' }
+      }
+    };
+    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>tariff</mark> explainer');
+  });
+
+  it('normalizeHit falls back to the raw excerpt when neither excerpt nor body matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: { id: 'p1', title: 'Tariffs 101', excerpt: 'An intro to tariffs', plaintext: 'body' },
+      highlight: { title: { matched_tokens: ['Tariffs'], snippet: '<mark>Tariffs</mark> 101' } }
+    };
+    const m = el.normalizeHit(hit, 0);
+    expect(m.excerptHtml).toBe('An intro to tariffs');
+    expect(m.excerptHtml).not.toContain('<mark>');
+  });
+
+  it('matchedSnippet ignores a field present without matched tokens', () => {
+    const el = mountWithConfig();
+    const hit = {
+      highlight: {
+        excerpt: { matched_tokens: [], snippet: 'echoed excerpt value' },
+        plaintext: { matched_tokens: ['x'], snippet: 'body <mark>x</mark>' }
+      }
+    };
+    expect(el.matchedSnippet(hit, 'excerpt')).toBeNull();
+    expect(el.matchedSnippet(hit, 'plaintext')).toBe('body <mark>x</mark>');
+  });
+
+  it('matchedSnippet returns null when highlighting is disabled', () => {
+    const el = mountWithConfig({ enableHighlighting: false });
+    const hit = { highlight: { plaintext: { matched_tokens: ['x'], snippet: 'a <mark>x</mark> b' } } };
+    expect(el.matchedSnippet(hit, 'plaintext')).toBeNull();
+  });
+
+  // The modal render path (results.hits.map) builds its excerpt with the same
+  // matchedSnippet chain; cover it directly so it can't drift from normalizeHit.
+  const clientReturning = (hits) => ({
+    collections: () => ({ documents: () => ({ search: async () => ({ found: hits.length, hits }) }) })
+  });
+
+  it('modal path renders the body snippet when only plaintext matched', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientReturning([{
+      document: {
+        id: 'p1', title: 'Interview With a TPP Critic', url: 'https://x/p/',
+        excerpt: 'Having observed critics of trade agreements for around 20 years now',
+        plaintext: 'I follow Maira Sutton', published_at: 1700000000000
+      },
+      highlight: { plaintext: { matched_tokens: ['Maira'], snippet: 'I follow <mark>Maira</mark> Sutton' } }
+    }]);
+    await el.handleSearch('Maira');
+    const html = el.hitsList.innerHTML;
+    expect(html).toContain('<mark>Maira</mark>');
+    expect(html).not.toContain('Having observed critics');
+  });
+
+  it('modal path escapes the raw excerpt fallback when neither excerpt nor body matched', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientReturning([{
+      document: {
+        id: 'p1', title: 'Safe', url: 'https://x/p/',
+        excerpt: '<img src=x onerror=alert(1)>', plaintext: 'body', published_at: 1700000000000
+      },
+      highlight: { title: { matched_tokens: ['Safe'], snippet: '<mark>Safe</mark>' } }
+    }]);
+    await el.handleSearch('Safe');
+    const html = el.hitsList.innerHTML;
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+});
