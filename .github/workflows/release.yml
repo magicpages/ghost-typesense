@@ -1,0 +1,94 @@
+name: Release
+
+# Publishes the packages to npm when a GitHub Release is published.
+#
+# Flow (versioning stays manual — see scripts/bump-versions.js):
+#   1. Bump every package version (node scripts/bump-versions.js) and write the
+#      matching CHANGELOG entry, on a PR. Merge to main.
+#   2. Draft a GitHub Release whose tag is `v<version>` matching the root
+#      package.json version (e.g. v2.0.6). Publishing the release triggers this
+#      workflow, which builds and publishes every public package to npm.
+#      Publishing to npm is what makes the unpkg / jsDelivr CDN URLs live.
+#
+# Auth: npm Trusted Publishing (OIDC). No NPM_TOKEN secret is stored — the
+# `id-token: write` permission lets the runner mint a short-lived token, and
+# NPM_CONFIG_PROVENANCE stamps each publish with a verifiable link back to this
+# workflow + commit. The trusted publisher must be configured once on npmjs.com
+# for EACH package (package → Settings → Trusted Publisher → GitHub Actions,
+# repository `magicpages/ghost-typesense`, workflow `release.yml`):
+#   - @magicpages/ghost-typesense-config
+#   - @magicpages/ghost-typesense-core
+#   - @magicpages/ghost-typesense-search-ui
+#   - @magicpages/ghost-typesense-cli
+#   - @magicpages/ghost-typesense-webhook
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: build · publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm Trusted Publishing + provenance
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm ci
+
+      # Trusted Publishing + provenance need a recent npm; the Node 20 pinned in
+      # .nvmrc ships an older one, so upgrade before publishing.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Build
+        run: npm run build
+
+      # Guard: the release tag must match the version in package.json, so we
+      # never publish a version the tag/changelog doesn't describe.
+      - name: Verify tag matches version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Release tag '$tag' does not match package version '$version'"
+            exit 1
+          fi
+          echo "Releasing $version"
+
+      # Publish each public package in dependency order (config → core →
+      # search-ui → cli → webhook-handler). A version already on npm is skipped,
+      # so re-running a failed release is safe and partial publishes recover.
+      - name: Publish to npm
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          set -euo pipefail
+          for dir in packages/config packages/core packages/search-ui apps/cli apps/webhook-handler; do
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "✓ $name@$version already on npm — skipping"
+            else
+              echo "→ publishing $name@$version"
+              ( cd "$dir" && npm publish )
+            fi
+          done
