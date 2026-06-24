@@ -468,6 +468,21 @@ import Typesense from 'typesense';
             return this.config.theme === 'light' ? false : (this.config.theme === 'dark' || preferDark);
         }
 
+        // The highlighted snippet for a field, but only when that field actually
+        // matched the query (its highlight carries matched tokens). Returns null
+        // otherwise, so a non-matching field that merely echoes its value never
+        // pre-empts a field that did match — this is what lets a body-only match
+        // surface its highlighted body snippet instead of the (unhighlighted)
+        // excerpt. Typesense only lists matched fields in `hit.highlight`, but we
+        // also guard on matched_tokens for versions that echo every queried field.
+        matchedSnippet(hit, fieldName) {
+            if (!this.config.enableHighlighting || !hit || !hit.highlight) return null;
+            const h = hit.highlight[fieldName];
+            if (!h) return null;
+            if (Array.isArray(h.matched_tokens) && h.matched_tokens.length === 0) return null;
+            return h.snippet || h.value || null;
+        }
+
         // Normalize a Typesense hit into the model the alternative layouts
         // render, resolving highlight markup, gated status, and the URL once so
         // layouts never re-implement that logic. The *Html fields are trusted
@@ -482,8 +497,12 @@ import Typesense from 'typesense';
                 return fallback;
             };
             const titleHtml = highlight('title', this.escapeHtmlAttr(doc.title)) || this.t('untitledPost');
-            let excerptHtml = highlight('excerpt', this.escapeHtmlAttr(doc.excerpt))
-                || highlight('plaintext', this.escapeHtmlAttr((doc.plaintext || '').substring(0, 160)))
+            // Prefer the highlighted snippet from whichever field actually
+            // matched (excerpt, then the body plaintext), so a body-only match
+            // still shows its highlighted snippet. Only when neither matched do
+            // we fall back to the raw excerpt/plaintext.
+            let excerptHtml = this.matchedSnippet(hit, 'excerpt')
+                || this.matchedSnippet(hit, 'plaintext')
                 || this.escapeHtmlAttr(doc.excerpt || (doc.plaintext || '').substring(0, 160) || '');
             if (excerptHtml && excerptHtml.length > 200) excerptHtml = excerptHtml.substring(0, 200) + '...';
 
@@ -1132,24 +1151,17 @@ import Typesense from 'typesense';
                         return fallback;
                     };
 
-                    const getHighlightedExcerpt = (fieldName, fallback) => {
-                        if (this.config.enableHighlighting && hit.highlight && hit.highlight[fieldName]) {
-                            // For excerpts, prefer snippet (shorter) and truncate if needed
-                            const highlighted = hit.highlight[fieldName].snippet || hit.highlight[fieldName].value || fallback;
-                            // Truncate to ~160 characters if too long (accounting for HTML tags)
-                            if (highlighted && highlighted.length > 200) {
-                                return highlighted.substring(0, 200) + '...';
-                            }
-                            return highlighted;
-                        }
-                        return fallback;
-                    };
-
                     const title = getHighlightedTitle('title', hit.document.title) || this.t('untitledPost');
-                    const excerpt = getHighlightedExcerpt('excerpt', hit.document.excerpt) ||
-                                  getHighlightedExcerpt('plaintext', hit.document.plaintext?.substring(0, 80)) ||
+                    // Prefer the highlighted snippet from whichever field actually
+                    // matched (excerpt, then the body plaintext), so a body-only
+                    // match still shows its highlighted snippet rather than the
+                    // unhighlighted excerpt. Fall back to the raw excerpt/plaintext
+                    // only when neither matched.
+                    let excerpt = this.matchedSnippet(hit, 'excerpt') ||
+                                  this.matchedSnippet(hit, 'plaintext') ||
                                   hit.document.excerpt ||
                                   hit.document.plaintext?.substring(0, 80) || '';
+                    if (excerpt && excerpt.length > 200) excerpt = excerpt.substring(0, 200) + '...';
 
                     const resultUrl = this.config.transformToRelativeUrls
                         ? this.toRelativeUrl(hit.document.url)
