@@ -1157,10 +1157,15 @@ import Typesense from 'typesense';
                     // match still shows its highlighted snippet rather than the
                     // unhighlighted excerpt. Fall back to the raw excerpt/plaintext
                     // only when neither matched.
+                    // matchedSnippet returns trusted highlight markup (Typesense
+                    // <mark> tags); the raw document fallback is escaped before it
+                    // reaches innerHTML, mirroring normalizeHit.
                     let excerpt = this.matchedSnippet(hit, 'excerpt') ||
                                   this.matchedSnippet(hit, 'plaintext') ||
-                                  hit.document.excerpt ||
-                                  hit.document.plaintext?.substring(0, 80) || '';
+                                  this.escapeHtmlAttr(
+                                      hit.document.excerpt ||
+                                      hit.document.plaintext?.substring(0, 80) || ''
+                                  );
                     if (excerpt && excerpt.length > 200) excerpt = excerpt.substring(0, 200) + '...';
 
                     const resultUrl = this.config.transformToRelativeUrls
