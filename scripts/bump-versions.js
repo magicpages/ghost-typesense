@@ -92,10 +92,9 @@ for (const pkg of packages) {
   console.log(`Updated ${pkg}`);
 }
 
-console.log('\nDone! Now run:');
-console.log('npm run build');
-console.log('cd packages/config && npm publish');
-console.log('cd ../core && npm publish');
-console.log('cd ../search-ui && npm publish');
-console.log('cd ../../apps/cli && npm publish');
-console.log('cd ../webhook-handler && npm publish');
+console.log('\nDone! Next:');
+console.log(`  1. Add the ${newVersion} entry to CHANGELOG.md.`);
+console.log('  2. Commit the version bump + changelog and open a PR; merge to main.');
+console.log(`  3. Draft a GitHub Release with tag v${newVersion} (matching the version).`);
+console.log('     Publishing the release runs .github/workflows/release.yml, which');
+console.log('     builds and publishes every package to npm via trusted publishing.');
