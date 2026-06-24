@@ -94,3 +94,26 @@ jobs:
               ( cd "$dir" && npm publish )
             fi
           done
+
+      # Tell the customer portal a new search-ui is live so it opens a bump PR
+      # within seconds (see customer-portal .github/workflows/
+      # ghost-typesense-search-ui-bump.yml). Best-effort: a missing token or API
+      # hiccup must not fail an otherwise-successful release — the portal's
+      # weekly Dependabot run is the safety net. Needs a fine-grained PAT with
+      # "Contents: write" on magicpages/customer-portal stored as the
+      # CUSTOMER_PORTAL_DISPATCH_TOKEN secret (GITHUB_TOKEN can't reach another
+      # repo).
+      - name: Notify customer-portal of the new search-ui release
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.CUSTOMER_PORTAL_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::CUSTOMER_PORTAL_DISPATCH_TOKEN not set — skipping portal bump dispatch"
+            exit 0
+          fi
+          payload=$(node -p "JSON.stringify({ event_type: 'ghost-typesense-search-ui-released', client_payload: { version: require('./packages/search-ui/package.json').version } })")
+          echo "Dispatching to customer-portal: $payload"
+          printf '%s' "$payload" | gh api --method POST repos/magicpages/customer-portal/dispatches --input -
