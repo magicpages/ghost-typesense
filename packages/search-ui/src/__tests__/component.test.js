@@ -347,9 +347,9 @@ describe('result templates', () => {
 });
 
 describe('highlight snippet selection', () => {
-  // Regression for the body-only-match case: the term matched in the body (plaintext)
-  // but not in the excerpt. The preview must show the highlighted body snippet,
-  // not the (unhighlighted) raw excerpt that pre-empted it before.
+  // Regression for the body-only-match case: the term matched in the body
+  // (plaintext) but not in the excerpt. The preview must show the highlighted
+  // body snippet, not the (unhighlighted) raw excerpt that pre-empted it before.
   it('normalizeHit uses the body snippet when only plaintext matched', () => {
     const el = mountWithConfig();
     const hit = {
@@ -374,23 +374,23 @@ describe('highlight snippet selection', () => {
   it('normalizeHit prefers the excerpt snippet when the excerpt matched', () => {
     const el = mountWithConfig();
     const hit = {
-      document: { id: 'p1', title: 'T', excerpt: 'A compost explainer', plaintext: 'body text' },
+      document: { id: 'p1', title: 'T', excerpt: 'A composting guide', plaintext: 'body text' },
       highlight: {
-        excerpt: { matched_tokens: ['compost'], snippet: 'A <mark>compost</mark> explainer' },
-        plaintext: { matched_tokens: ['compost'], snippet: 'body <mark>compost</mark> text' }
+        excerpt: { matched_tokens: ['composting'], snippet: 'A <mark>composting</mark> guide' },
+        plaintext: { matched_tokens: ['composting'], snippet: 'body <mark>composting</mark> text' }
       }
     };
-    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>compost</mark> explainer');
+    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>composting</mark> guide');
   });
 
   it('normalizeHit falls back to the raw excerpt when neither excerpt nor body matched', () => {
     const el = mountWithConfig();
     const hit = {
-      document: { id: 'p1', title: 'Composts 101', excerpt: 'An intro to composts', plaintext: 'body' },
-      highlight: { title: { matched_tokens: ['Composts'], snippet: '<mark>Composts</mark> 101' } }
+      document: { id: 'p1', title: 'Composting 101', excerpt: 'An intro to composting', plaintext: 'body' },
+      highlight: { title: { matched_tokens: ['Composting'], snippet: '<mark>Composting</mark> 101' } }
     };
     const m = el.normalizeHit(hit, 0);
-    expect(m.excerptHtml).toBe('An intro to composts');
+    expect(m.excerptHtml).toBe('An intro to composting');
     expect(m.excerptHtml).not.toContain('<mark>');
   });
 
