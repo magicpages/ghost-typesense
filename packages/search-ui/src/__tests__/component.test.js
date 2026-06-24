@@ -347,50 +347,50 @@ describe('result templates', () => {
 });
 
 describe('highlight snippet selection', () => {
-  // Regression for the "Maira" case: the term matched in the body (plaintext)
-  // but not in the excerpt. The preview must show the highlighted body snippet,
-  // not the (unhighlighted) raw excerpt that pre-empted it before.
+  // Regression for the body-only-match case: the term matched in the body
+  // (plaintext) but not in the excerpt. The preview must show the highlighted
+  // body snippet, not the (unhighlighted) raw excerpt that pre-empted it before.
   it('normalizeHit uses the body snippet when only plaintext matched', () => {
     const el = mountWithConfig();
     const hit = {
       document: {
         id: 'p1',
-        title: 'Interview With a TPP Critic',
-        excerpt: 'Having observed critics of trade agreements for around 20 years now...',
-        plaintext: 'of them! I follow Maira Sutton of the Electronic Frontier Foundation'
+        title: 'A Field Guide to Garden Birds',
+        excerpt: 'Spotting common backyard visitors through the seasons...',
+        plaintext: 'my notes from the field, where I watch the goldfinch at the feeder'
       },
       highlight: {
         plaintext: {
-          matched_tokens: ['Maira'],
-          snippet: 'of them! I follow <mark>Maira</mark> Sutton of the Electronic'
+          matched_tokens: ['goldfinch'],
+          snippet: 'my notes from the field, where I watch the <mark>goldfinch</mark> at the'
         }
       }
     };
     const m = el.normalizeHit(hit, 0);
-    expect(m.excerptHtml).toContain('<mark>Maira</mark>');
-    expect(m.excerptHtml).not.toContain('Having observed critics');
+    expect(m.excerptHtml).toContain('<mark>goldfinch</mark>');
+    expect(m.excerptHtml).not.toContain('Spotting common backyard');
   });
 
   it('normalizeHit prefers the excerpt snippet when the excerpt matched', () => {
     const el = mountWithConfig();
     const hit = {
-      document: { id: 'p1', title: 'T', excerpt: 'A tariff explainer', plaintext: 'body text' },
+      document: { id: 'p1', title: 'T', excerpt: 'A composting guide', plaintext: 'body text' },
       highlight: {
-        excerpt: { matched_tokens: ['tariff'], snippet: 'A <mark>tariff</mark> explainer' },
-        plaintext: { matched_tokens: ['tariff'], snippet: 'body <mark>tariff</mark> text' }
+        excerpt: { matched_tokens: ['composting'], snippet: 'A <mark>composting</mark> guide' },
+        plaintext: { matched_tokens: ['composting'], snippet: 'body <mark>composting</mark> text' }
       }
     };
-    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>tariff</mark> explainer');
+    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>composting</mark> guide');
   });
 
   it('normalizeHit falls back to the raw excerpt when neither excerpt nor body matched', () => {
     const el = mountWithConfig();
     const hit = {
-      document: { id: 'p1', title: 'Tariffs 101', excerpt: 'An intro to tariffs', plaintext: 'body' },
-      highlight: { title: { matched_tokens: ['Tariffs'], snippet: '<mark>Tariffs</mark> 101' } }
+      document: { id: 'p1', title: 'Composting 101', excerpt: 'An intro to composting', plaintext: 'body' },
+      highlight: { title: { matched_tokens: ['Composting'], snippet: '<mark>Composting</mark> 101' } }
     };
     const m = el.normalizeHit(hit, 0);
-    expect(m.excerptHtml).toBe('An intro to tariffs');
+    expect(m.excerptHtml).toBe('An intro to composting');
     expect(m.excerptHtml).not.toContain('<mark>');
   });
 
@@ -422,16 +422,16 @@ describe('highlight snippet selection', () => {
     const el = mountWithConfig();
     el.typesenseClient = clientReturning([{
       document: {
-        id: 'p1', title: 'Interview With a TPP Critic', url: 'https://x/p/',
-        excerpt: 'Having observed critics of trade agreements for around 20 years now',
-        plaintext: 'I follow Maira Sutton', published_at: 1700000000000
+        id: 'p1', title: 'A Field Guide to Garden Birds', url: 'https://x/p/',
+        excerpt: 'Spotting common backyard visitors through the seasons',
+        plaintext: 'I watch the goldfinch', published_at: 1700000000000
       },
-      highlight: { plaintext: { matched_tokens: ['Maira'], snippet: 'I follow <mark>Maira</mark> Sutton' } }
+      highlight: { plaintext: { matched_tokens: ['goldfinch'], snippet: 'I watch the <mark>goldfinch</mark>' } }
     }]);
-    await el.handleSearch('Maira');
+    await el.handleSearch('goldfinch');
     const html = el.hitsList.innerHTML;
-    expect(html).toContain('<mark>Maira</mark>');
-    expect(html).not.toContain('Having observed critics');
+    expect(html).toContain('<mark>goldfinch</mark>');
+    expect(html).not.toContain('Spotting common backyard');
   });
 
   it('modal path escapes the raw excerpt fallback when neither excerpt nor body matched', async () => {

@@ -53,8 +53,8 @@ function modelWith(featureImage) {
       isGated: false,
       visibility: 'public',
       featureImage,
-      tags: ['Trade'],
-      authors: ['Simon'],
+      tags: ['Gardening'],
+      authors: ['Ada Lovelace'],
       publishedAt: 1700000000000
     }
   ];
