@@ -345,3 +345,107 @@ describe('result templates', () => {
     expect(gridFields).toContain('authors');
   });
 });
+
+describe('highlight snippet selection', () => {
+  // Regression for the body-only-match case: the term matched in the body (plaintext)
+  // but not in the excerpt. The preview must show the highlighted body snippet,
+  // not the (unhighlighted) raw excerpt that pre-empted it before.
+  it('normalizeHit uses the body snippet when only plaintext matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: {
+        id: 'p1',
+        title: 'A Field Guide to Garden Birds',
+        excerpt: 'Spotting common backyard visitors through the seasons...',
+        plaintext: 'my notes from the field, where I watch the goldfinch at the feeder'
+      },
+      highlight: {
+        plaintext: {
+          matched_tokens: ['goldfinch'],
+          snippet: 'my notes from the field, where I watch the <mark>goldfinch</mark> at the'
+        }
+      }
+    };
+    const m = el.normalizeHit(hit, 0);
+    expect(m.excerptHtml).toContain('<mark>goldfinch</mark>');
+    expect(m.excerptHtml).not.toContain('Spotting common backyard');
+  });
+
+  it('normalizeHit prefers the excerpt snippet when the excerpt matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: { id: 'p1', title: 'T', excerpt: 'A compost explainer', plaintext: 'body text' },
+      highlight: {
+        excerpt: { matched_tokens: ['compost'], snippet: 'A <mark>compost</mark> explainer' },
+        plaintext: { matched_tokens: ['compost'], snippet: 'body <mark>compost</mark> text' }
+      }
+    };
+    expect(el.normalizeHit(hit, 0).excerptHtml).toBe('A <mark>compost</mark> explainer');
+  });
+
+  it('normalizeHit falls back to the raw excerpt when neither excerpt nor body matched', () => {
+    const el = mountWithConfig();
+    const hit = {
+      document: { id: 'p1', title: 'Composts 101', excerpt: 'An intro to composts', plaintext: 'body' },
+      highlight: { title: { matched_tokens: ['Composts'], snippet: '<mark>Composts</mark> 101' } }
+    };
+    const m = el.normalizeHit(hit, 0);
+    expect(m.excerptHtml).toBe('An intro to composts');
+    expect(m.excerptHtml).not.toContain('<mark>');
+  });
+
+  it('matchedSnippet ignores a field present without matched tokens', () => {
+    const el = mountWithConfig();
+    const hit = {
+      highlight: {
+        excerpt: { matched_tokens: [], snippet: 'echoed excerpt value' },
+        plaintext: { matched_tokens: ['x'], snippet: 'body <mark>x</mark>' }
+      }
+    };
+    expect(el.matchedSnippet(hit, 'excerpt')).toBeNull();
+    expect(el.matchedSnippet(hit, 'plaintext')).toBe('body <mark>x</mark>');
+  });
+
+  it('matchedSnippet returns null when highlighting is disabled', () => {
+    const el = mountWithConfig({ enableHighlighting: false });
+    const hit = { highlight: { plaintext: { matched_tokens: ['x'], snippet: 'a <mark>x</mark> b' } } };
+    expect(el.matchedSnippet(hit, 'plaintext')).toBeNull();
+  });
+
+  // The modal render path (results.hits.map) builds its excerpt with the same
+  // matchedSnippet chain; cover it directly so it can't drift from normalizeHit.
+  const clientReturning = (hits) => ({
+    collections: () => ({ documents: () => ({ search: async () => ({ found: hits.length, hits }) }) })
+  });
+
+  it('modal path renders the body snippet when only plaintext matched', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientReturning([{
+      document: {
+        id: 'p1', title: 'A Field Guide to Garden Birds', url: 'https://x/p/',
+        excerpt: 'Spotting common backyard visitors through the seasons',
+        plaintext: 'I watch the goldfinch', published_at: 1700000000000
+      },
+      highlight: { plaintext: { matched_tokens: ['goldfinch'], snippet: 'I watch the <mark>goldfinch</mark>' } }
+    }]);
+    await el.handleSearch('goldfinch');
+    const html = el.hitsList.innerHTML;
+    expect(html).toContain('<mark>goldfinch</mark>');
+    expect(html).not.toContain('Spotting common backyard');
+  });
+
+  it('modal path escapes the raw excerpt fallback when neither excerpt nor body matched', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientReturning([{
+      document: {
+        id: 'p1', title: 'Safe', url: 'https://x/p/',
+        excerpt: '<img src=x onerror=alert(1)>', plaintext: 'body', published_at: 1700000000000
+      },
+      highlight: { title: { matched_tokens: ['Safe'], snippet: '<mark>Safe</mark>' } }
+    }]);
+    await el.handleSearch('Safe');
+    const html = el.hitsList.innerHTML;
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+});

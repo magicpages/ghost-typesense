@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-06-24
+
+### Fixed
+- **Search highlighting missed matches that occur only in the post body.** The
+  result preview picked its snippet by trying the `excerpt` field first and
+  falling back to the raw excerpt text — which is virtually always present — so
+  the `||` chain short-circuited there and never reached the `plaintext` (body)
+  highlight. When a query term matched only in the body (e.g. a name that appears
+  in the article but not the excerpt), the post still ranked for it, but the
+  matched term wasn't highlighted in the preview. The snippet is now taken from
+  whichever field actually matched (excerpt, then body `plaintext`, gated on the
+  highlight's `matched_tokens`), falling back to the raw excerpt only when neither
+  matched. Affects all layouts (modal, palette, discovery). Search-ui bundle
+  change — publishing refreshes the CDN; redeploy the rebuilt bundle to sites.
+
 ## [2.0.6] - 2026-06-24
 
 ### Changed
