@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import createDiscoveryLayout from '../layouts/discovery.js';
+
+// Hosts mounted during a test, torn down afterwards so DOM fixtures never leak
+// across tests sharing the jsdom environment.
+let mountedHosts = [];
+
+afterEach(() => {
+  for (const host of mountedHosts) host.remove();
+  mountedHosts = [];
+});
 
 // Minimal layout context. The discovery factory only touches the core through
 // this object; for rendering we need the prefix, an HTML-attribute escaper, and
@@ -24,6 +33,7 @@ function mountDiscovery() {
   const layout = createDiscoveryLayout(makeCtx());
   const host = document.createElement('div');
   document.body.appendChild(host);
+  mountedHosts.push(host);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = layout.buildMarkup();
   layout.cacheElements(shadow);
