@@ -53,10 +53,12 @@ jobs:
       - name: Install
         run: npm ci
 
-      # Trusted Publishing + provenance need a recent npm; the Node 20 pinned in
-      # .nvmrc ships an older one, so upgrade before publishing.
+      # Trusted Publishing + provenance need npm >= 11.5.1; the Node 20 pinned in
+      # .nvmrc ships npm 10, so upgrade before publishing. Pinned to the npm 11
+      # major (not @latest) for reproducible releases — npm 10 has no trusted
+      # publishing, so this floor must never drop below 11.
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Build
         run: npm run build
