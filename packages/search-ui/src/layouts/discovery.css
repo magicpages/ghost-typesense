@@ -424,21 +424,6 @@
   display: block;
 }
 
-.mp-search-discovery-hero-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--accent-color) 10%, var(--color-surface));
-  border: 1px solid var(--color-border);
-  color: color-mix(in srgb, var(--accent-color) 70%, var(--color-text));
-}
-
-.mp-search-discovery-hero-empty svg {
-  width: calc(2.5 * var(--mp-rem));
-  height: calc(2.5 * var(--mp-rem));
-  opacity: 0.7;
-}
-
 .mp-search-discovery-preview-title {
   color: var(--color-text);
   font-size: calc(1.375 * var(--mp-rem));
