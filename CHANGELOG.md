@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-06-24
+
+### Changed
+- **Discovery layout no longer shows a placeholder for posts without a feature
+  image.** The discovery preview pane rendered a grey placeholder hero (a framed
+  image icon) whenever the selected post had no `feature_image`. On text-led
+  publications that meant a placeholder on effectively every result. The preview
+  now omits the hero entirely when there is no image, so an image-less post reads
+  as a clean text preview; the hero image still renders when one is present. The
+  modal `grid` template's own placeholder is unchanged. Search-ui bundle change
+  only — update and redeploy the rebuilt `discovery.min.js`.
+
 ## [2.0.5] - 2026-06-22
 
 ### Fixed

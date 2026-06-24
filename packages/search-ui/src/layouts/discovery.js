@@ -63,16 +63,6 @@ export default function createDiscoveryLayout(ctx) {
       + `<span aria-hidden="true">🔒</span> ${esc(ctx.t('membersLabel'))}</span>`;
   }
 
-  // A hero placeholder for posts without a feature image.
-  function heroPlaceholder() {
-    return `<div class="${P}-discovery-hero ${P}-discovery-hero-empty" aria-hidden="true">`
-      + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" `
-      + `stroke-linecap="round" stroke-linejoin="round">`
-      + `<rect x="3" y="3" width="18" height="18" rx="2" />`
-      + `<circle cx="8.5" cy="8.5" r="1.5" />`
-      + `<path d="M21 15l-5-5L5 21" /></svg></div>`;
-  }
-
   // ---- Selection ----------------------------------------------------------
 
   function applySelectionClasses() {
@@ -134,13 +124,13 @@ export default function createDiscoveryLayout(ctx) {
 
     const parts = [];
 
-    // Hero image (feature_image is often null) — placeholder otherwise.
+    // Hero image — feature_image is often null (e.g. text-only posts). When it
+    // is absent the preview omits the hero entirely rather than showing a
+    // placeholder, so an image-less post reads as a clean text preview.
     if (m.featureImage) {
       parts.push(
         `<img class="${P}-discovery-hero" src="${esc(m.featureImage)}" alt="" loading="lazy" />`
       );
-    } else {
-      parts.push(heroPlaceholder());
     }
 
     // Title — trusted highlight markup.
