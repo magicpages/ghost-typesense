@@ -38,7 +38,23 @@ vi.mock('@ts-ghost/content-api', () => {
         read: ({ id }: { id: string }) => ({
           include: () => ({
             fetch: async () =>
-              id === 'gated-post-1'
+              id === 'excluded-post-1'
+                ? {
+                    success: true,
+                    data: {
+                      id: 'excluded-post-1',
+                      title: 'Landing Page',
+                      slug: 'landing-page',
+                      html: '<p>Marketing copy.</p>',
+                      excerpt: 'Marketing copy.',
+                      visibility: 'public',
+                      published_at: '2024-02-09T19:00:00.000Z',
+                      updated_at: '2024-02-09T19:00:00.000Z',
+                      tags: [{ name: '#no-search-index', slug: 'hash-no-search-index', visibility: 'internal' }],
+                      authors: [{ name: 'Test Author' }]
+                    }
+                  }
+                : id === 'gated-post-1'
                 ? {
                     success: true,
                     data: {
@@ -375,6 +391,83 @@ describe('GhostTypesenseManager — gated content redaction', () => {
       const manager = new GhostTypesenseManager(baseConfig);
       await manager.indexPost('test-post-1');
 
+      expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
+      expect(mockDocuments.delete).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('GhostTypesenseManager — tag-based exclusion (#no-search-index)', () => {
+  const baseConfig: Config = {
+    ghost: { url: 'https://test.com', key: 'test-key', version: 'v5.0' },
+    typesense: { nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }], apiKey: 'test-key' },
+    collection: {
+      name: 'test-collection',
+      fields: [
+        { name: 'id', type: 'string', optional: false },
+        { name: 'title', type: 'string', optional: false },
+        { name: 'slug', type: 'string', optional: false },
+        { name: 'html', type: 'string', optional: true },
+        { name: 'excerpt', type: 'string', optional: true },
+        { name: 'published_at', type: 'int64', optional: false },
+        { name: 'updated_at', type: 'int64', optional: false }
+      ]
+    }
+  };
+
+  // isExcludedByTag is private; reach it for focused unit tests.
+  function isExcluded(manager: GhostTypesenseManager, post: unknown): boolean {
+    return (manager as unknown as { isExcludedByTag: (p: unknown) => boolean }).isExcludedByTag(post);
+  }
+
+  it('excludes #no-search-index by default, matching tag name or slug (case-insensitive)', () => {
+    const m = new GhostTypesenseManager(baseConfig);
+    expect(isExcluded(m, { tags: [{ name: '#no-search-index', slug: 'hash-no-search-index' }] })).toBe(true);
+    // Defensive: a tag identifiable only by its hash- slug.
+    expect(isExcluded(m, { tags: [{ name: 'Renamed', slug: 'hash-no-search-index' }] })).toBe(true);
+    expect(isExcluded(m, { tags: [{ name: 'Blog', slug: 'blog' }] })).toBe(false);
+    expect(isExcluded(m, {})).toBe(false);
+  });
+
+  it('honours a custom excludeTags list and overrides the default', () => {
+    const m = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, excludeTags: ['Draft'] }
+    });
+    expect(isExcluded(m, { tags: [{ name: 'draft', slug: 'draft' }] })).toBe(true);
+    // Default replaced — #no-search-index no longer excludes.
+    expect(isExcluded(m, { tags: [{ name: '#no-search-index' }] })).toBe(false);
+  });
+
+  it('treats an empty excludeTags array as "exclusion disabled"', () => {
+    const m = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, excludeTags: [] }
+    });
+    expect(isExcluded(m, { tags: [{ name: '#no-search-index' }] })).toBe(false);
+  });
+
+  // The webhook handler indexes via indexPost; an edit that adds the tag must
+  // remove the post from the index rather than upsert it.
+  describe('indexPost (webhook path)', () => {
+    beforeEach(() => {
+      mockDocuments.upsert.mockClear();
+      mockDocuments.delete.mockClear();
+    });
+
+    it('de-indexes a post tagged #no-search-index (delete, not upsert)', async () => {
+      const m = new GhostTypesenseManager(baseConfig);
+      await m.indexPost('excluded-post-1');
+      expect(mockDocuments.upsert).not.toHaveBeenCalled();
+      expect(mockDocuments.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('indexes the same post when excludeTags is set to []', async () => {
+      const m = new GhostTypesenseManager({
+        ...baseConfig,
+        collection: { ...baseConfig.collection, excludeTags: [] }
+      });
+      await m.indexPost('excluded-post-1');
       expect(mockDocuments.upsert).toHaveBeenCalledTimes(1);
       expect(mockDocuments.delete).not.toHaveBeenCalled();
     });

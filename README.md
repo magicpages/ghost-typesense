@@ -219,6 +219,21 @@ With it enabled:
 
 For real-time updates, set `INDEX_GATED_CONTENT=true` on the webhook handler to mirror this behaviour.
 
+## Excluding individual posts
+
+Some posts shouldn't be searchable at all — landing pages, legal/policy pages, internal notes. Tag them and they're kept out of the index entirely (and, via the webhook handler, an edit that *adds* the tag de-indexes the post).
+
+By default the indexer excludes any post carrying the **`#no-search-index`** tag (a Ghost internal tag — `#`-prefixed tags are hidden from your site's public output anyway). Override the list — or disable it — with `excludeTags` on the collection config:
+
+```jsonc
+"collection": {
+    "name": "posts",
+    "excludeTags": ["#no-search-index", "Internal"]  // [] disables exclusion
+}
+```
+
+Each value is matched case-insensitively against a post's Ghost tag **names and slugs**, so the internal-tag form (`#no-search-index` / `hash-no-search-index`) is caught however the tag was created.
+
 ## Packages
 
 | Package | Description |

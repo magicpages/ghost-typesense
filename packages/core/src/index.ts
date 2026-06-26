@@ -10,6 +10,15 @@ import type { Config } from '@magicpages/ghost-typesense-config';
  */
 type GhostTag = NonNullable<GhostPost['tags']>[number];
 
+/**
+ * Default content-policy exclusion: a post tagged `#no-search-index` is kept out
+ * of the index. Applied when `collection.excludeTags` is omitted; an explicit
+ * `[]` disables exclusion. Kept here (not just in the config default) so every
+ * consumer of the package — CLI, webhook handler — shares one canonical
+ * convention without each having to opt in.
+ */
+const DEFAULT_EXCLUDE_TAGS = ['#no-search-index'];
+
 export interface Post {
   id: string;
   title: string;
@@ -108,6 +117,39 @@ export class GhostTypesenseManager {
       tag.visibility === 'internal' ||
       (typeof tag.name === 'string' && tag.name.startsWith('#')) ||
       (typeof tag.slug === 'string' && tag.slug.startsWith('hash-'))
+    );
+  }
+
+  /**
+   * Is this post excluded from the index by tag? A publisher marks a post as
+   * non-searchable with a tag (the `#no-search-index` convention by default,
+   * overridable via `collection.excludeTags`). Matching mirrors isInternalTag's
+   * defensive shape — by tag name OR slug, case-insensitively — so the Ghost
+   * internal-tag form (`#no-search-index` / `hash-no-search-index`) is caught
+   * however it was created. The field guards keep a malformed tag from throwing.
+   * @private
+   */
+  private isExcludedByTag(post: GhostPost): boolean {
+    const exclude = this.config.collection.excludeTags ?? DEFAULT_EXCLUDE_TAGS;
+    if (exclude.length === 0) return false;
+
+    const tags = post.tags;
+    if (!tags || !Array.isArray(tags) || tags.length === 0) return false;
+
+    // The values to match: each configured tag lowercased, plus the Ghost
+    // `hash-` slug form for any `#`-prefixed name — so `#no-search-index` also
+    // matches the slug `hash-no-search-index` even if the tag's display name was
+    // later changed.
+    const wanted = new Set<string>();
+    for (const t of exclude) {
+      const v = t.toLowerCase();
+      wanted.add(v);
+      if (v.startsWith('#')) wanted.add(`hash-${v.slice(1)}`);
+    }
+    return tags.some(
+      (tag) =>
+        (typeof tag.name === 'string' && wanted.has(tag.name.toLowerCase())) ||
+        (typeof tag.slug === 'string' && wanted.has(tag.slug.toLowerCase()))
     );
   }
 
@@ -319,11 +361,13 @@ export class GhostTypesenseManager {
       allPosts = allPosts.concat(pageResponse.data);
     }
 
-    // Unless gated indexing is opted into, drop non-public posts so only
-    // public published content is indexed (the default behaviour).
+    // Drop posts the publisher has excluded by tag (e.g. #no-search-index)
+    // first, then — unless gated indexing is opted into — drop non-public posts
+    // so only public published content is indexed (the default behaviour).
+    const indexable = allPosts.filter((post) => !this.isExcludedByTag(post));
     const postsToIndex = this.config.collection.indexGatedContent
-      ? allPosts
-      : allPosts.filter((post) => ((post as { visibility?: string }).visibility || 'public') === 'public');
+      ? indexable
+      : indexable.filter((post) => ((post as { visibility?: string }).visibility || 'public') === 'public');
 
     console.log(`Found ${postsToIndex.length} posts to index (of ${allPosts.length} fetched)`);
     const documents = postsToIndex.map((post) => this.transformPost(post));
@@ -544,6 +588,14 @@ export class GhostTypesenseManager {
 
     const visibility = (post.data as { visibility?: string }).visibility || 'public';
     const collection = this.typesense.collections(this.collectionName);
+
+    // Excluded by tag (e.g. #no-search-index): ensure it isn't in the index, so
+    // an edit that *adds* the tag de-indexes the post. Remove any existing
+    // document rather than upserting it.
+    if (this.isExcludedByTag(post.data)) {
+      await collection.documents().delete({ filter_by: `id:${postId}` }).catch(() => {});
+      return;
+    }
 
     // Respect the opt-in: with gated indexing off, a non-public post must not
     // be indexed. Remove any existing document (e.g. a post that just turned
