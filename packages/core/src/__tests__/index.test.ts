@@ -22,11 +22,22 @@ vi.mock('@ts-ghost/content-api', () => {
                   updated_at: '2024-02-09T19:00:00.000Z',
                   tags: [{ name: 'test-tag' }],
                   authors: [{ name: 'Test Author' }]
+                },
+                {
+                  id: 'excluded-bulk-post',
+                  title: 'Excluded Bulk Post',
+                  slug: 'excluded-bulk-post',
+                  html: '<p>Should not be indexed</p>',
+                  excerpt: 'nope',
+                  published_at: '2024-02-09T19:00:00.000Z',
+                  updated_at: '2024-02-09T19:00:00.000Z',
+                  tags: [{ name: '#no-search-index', slug: 'hash-no-search-index' }],
+                  authors: [{ name: 'Test Author' }]
                 }
               ],
               meta: {
                 pagination: {
-                  total: 1,
+                  total: 2,
                   limit: 15
                 }
               }
@@ -445,6 +456,18 @@ describe('GhostTypesenseManager — tag-based exclusion (#no-search-index)', () 
       collection: { ...baseConfig.collection, excludeTags: [] }
     });
     expect(isExcluded(m, { tags: [{ name: '#no-search-index' }] })).toBe(false);
+  });
+
+  it('drops excluded posts from the bulk index (indexAllPosts)', async () => {
+    mockDocuments.import.mockClear();
+    const m = new GhostTypesenseManager(baseConfig);
+    await m.indexAllPosts();
+
+    const importedIds = mockDocuments.import.mock.calls
+      .flatMap((call) => call[0] as Array<{ id: string }>)
+      .map((doc) => doc.id);
+    expect(importedIds).toContain('test-post-1');
+    expect(importedIds).not.toContain('excluded-bulk-post');
   });
 
   // The webhook handler indexes via indexPost; an edit that adds the tag must

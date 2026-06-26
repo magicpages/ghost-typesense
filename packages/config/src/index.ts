@@ -116,6 +116,14 @@ export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
 ];
 
 /**
+ * Default content-policy tag exclusion: a post carrying any of these tags is
+ * kept out of the index. The single source of truth shared by the indexer
+ * (core applies it when `excludeTags` is omitted) and `createDefaultConfig`, so
+ * the default can't drift between explicit-config and default callers.
+ */
+export const DEFAULT_EXCLUDE_TAGS = ['#no-search-index'];
+
+/**
  * Collection configuration schema with strict validation
  */
 export const CollectionConfigSchema = z.object({
@@ -237,7 +245,7 @@ export function createDefaultConfig(
       fields: DEFAULT_COLLECTION_FIELDS,
       // Canonical convention: a post tagged `#no-search-index` is kept out of
       // the index. Set to [] to disable, or add your own tags.
-      excludeTags: ['#no-search-index']
+      excludeTags: [...DEFAULT_EXCLUDE_TAGS]
     }
   };
 }

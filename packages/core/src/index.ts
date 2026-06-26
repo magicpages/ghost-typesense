@@ -1,7 +1,7 @@
 import { TSGhostContentAPI, type Post as GhostPost } from '@ts-ghost/content-api';
 import { Client } from 'typesense';
 import type { CollectionFieldSchema } from 'typesense/lib/Typesense/Collection';
-import type { Config } from '@magicpages/ghost-typesense-config';
+import { type Config, DEFAULT_EXCLUDE_TAGS } from '@magicpages/ghost-typesense-config';
 
 /**
  * A single tag as it appears on a Ghost post, derived from the Content API's
@@ -9,15 +9,6 @@ import type { Config } from '@magicpages/ghost-typesense-config';
  * required) and in sync with the upstream schema.
  */
 type GhostTag = NonNullable<GhostPost['tags']>[number];
-
-/**
- * Default content-policy exclusion: a post tagged `#no-search-index` is kept out
- * of the index. Applied when `collection.excludeTags` is omitted; an explicit
- * `[]` disables exclusion. Kept here (not just in the config default) so every
- * consumer of the package — CLI, webhook handler — shares one canonical
- * convention without each having to opt in.
- */
-const DEFAULT_EXCLUDE_TAGS = ['#no-search-index'];
 
 export interface Post {
   id: string;
@@ -43,10 +34,16 @@ export class GhostTypesenseManager {
   private typesense: Client;
   private config: Config;
   private collectionName: string;
+  // Normalized once at construction (see buildExcludeTagSet) rather than rebuilt
+  // per post during bulk indexing. Empty set = exclusion disabled.
+  private readonly excludeTagSet: Set<string>;
 
   constructor(config: Config) {
     this.config = config;
     this.collectionName = config.collection.name;
+    this.excludeTagSet = GhostTypesenseManager.buildExcludeTagSet(
+      config.collection.excludeTags ?? DEFAULT_EXCLUDE_TAGS
+    );
     this.ghost = new TSGhostContentAPI(
       config.ghost.url,
       config.ghost.key,
@@ -121,35 +118,40 @@ export class GhostTypesenseManager {
   }
 
   /**
-   * Is this post excluded from the index by tag? A publisher marks a post as
-   * non-searchable with a tag (the `#no-search-index` convention by default,
-   * overridable via `collection.excludeTags`). Matching mirrors isInternalTag's
-   * defensive shape — by tag name OR slug, case-insensitively — so the Ghost
-   * internal-tag form (`#no-search-index` / `hash-no-search-index`) is caught
-   * however it was created. The field guards keep a malformed tag from throwing.
+   * Normalize the configured exclusion tags into a lookup set: each value
+   * lowercased, plus the Ghost `hash-` slug form for any `#`-prefixed name — so
+   * `#no-search-index` also matches the slug `hash-no-search-index` even if the
+   * tag's display name was later changed. Built once per manager.
    * @private
    */
-  private isExcludedByTag(post: GhostPost): boolean {
-    const exclude = this.config.collection.excludeTags ?? DEFAULT_EXCLUDE_TAGS;
-    if (exclude.length === 0) return false;
-
-    const tags = post.tags;
-    if (!tags || !Array.isArray(tags) || tags.length === 0) return false;
-
-    // The values to match: each configured tag lowercased, plus the Ghost
-    // `hash-` slug form for any `#`-prefixed name — so `#no-search-index` also
-    // matches the slug `hash-no-search-index` even if the tag's display name was
-    // later changed.
+  private static buildExcludeTagSet(tags: string[]): Set<string> {
     const wanted = new Set<string>();
-    for (const t of exclude) {
+    for (const t of tags) {
       const v = t.toLowerCase();
       wanted.add(v);
       if (v.startsWith('#')) wanted.add(`hash-${v.slice(1)}`);
     }
+    return wanted;
+  }
+
+  /**
+   * Is this post excluded from the index by tag? A publisher marks a post as
+   * non-searchable with a tag (the `#no-search-index` convention by default,
+   * overridable via `collection.excludeTags`). Matching mirrors isInternalTag's
+   * defensive shape — by tag name OR slug, case-insensitively. The field guards
+   * keep a malformed tag from throwing.
+   * @private
+   */
+  private isExcludedByTag(post: GhostPost): boolean {
+    if (this.excludeTagSet.size === 0) return false;
+
+    const tags = post.tags;
+    if (!tags || !Array.isArray(tags) || tags.length === 0) return false;
+
     return tags.some(
       (tag) =>
-        (typeof tag.name === 'string' && wanted.has(tag.name.toLowerCase())) ||
-        (typeof tag.slug === 'string' && wanted.has(tag.slug.toLowerCase()))
+        (typeof tag.name === 'string' && this.excludeTagSet.has(tag.name.toLowerCase())) ||
+        (typeof tag.slug === 'string' && this.excludeTagSet.has(tag.slug.toLowerCase()))
     );
   }
 
@@ -593,7 +595,8 @@ export class GhostTypesenseManager {
     // an edit that *adds* the tag de-indexes the post. Remove any existing
     // document rather than upserting it.
     if (this.isExcludedByTag(post.data)) {
-      await collection.documents().delete({ filter_by: `id:${postId}` }).catch(() => {});
+      await collection.documents().delete({ filter_by: `id:${postId}` })
+        .catch((err: unknown) => console.error(`Failed to de-index excluded post ${postId}:`, err));
       return;
     }
 
@@ -601,7 +604,8 @@ export class GhostTypesenseManager {
     // be indexed. Remove any existing document (e.g. a post that just turned
     // members-only) rather than upserting it.
     if (visibility !== 'public' && !this.config.collection.indexGatedContent) {
-      await collection.documents().delete({ filter_by: `id:${postId}` }).catch(() => {});
+      await collection.documents().delete({ filter_by: `id:${postId}` })
+        .catch((err: unknown) => console.error(`Failed to remove gated post ${postId} from the index:`, err));
       return;
     }
 
