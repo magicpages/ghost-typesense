@@ -116,6 +116,14 @@ export const DEFAULT_COLLECTION_FIELDS: CollectionField[] = [
 ];
 
 /**
+ * Default content-policy tag exclusion: a post carrying any of these tags is
+ * kept out of the index. The single source of truth shared by the indexer
+ * (core applies it when `excludeTags` is omitted) and `createDefaultConfig`, so
+ * the default can't drift between explicit-config and default callers.
+ */
+export const DEFAULT_EXCLUDE_TAGS = ['#no-search-index'];
+
+/**
  * Collection configuration schema with strict validation
  */
 export const CollectionConfigSchema = z.object({
@@ -156,7 +164,15 @@ export const CollectionConfigSchema = z.object({
   // Omitted/undefined is treated as false, so only public published content is
   // indexed by default. Left optional (no schema default) so existing config
   // objects remain valid without this key.
-  indexGatedContent: z.boolean().optional()
+  indexGatedContent: z.boolean().optional(),
+  // Posts carrying any of these tags are excluded from the index entirely — a
+  // content-policy escape hatch for landing/legal/internal pages a publisher
+  // doesn't want searchable. Each value is matched against a post's Ghost tag
+  // names and slugs (case-insensitive), so the canonical `#no-search-index`
+  // internal tag works out of the box. Left optional so existing configs stay
+  // valid; when omitted the indexer applies the `#no-search-index` default, and
+  // an explicit empty array disables exclusion entirely.
+  excludeTags: z.array(z.string()).optional()
 });
 
 /**
@@ -226,7 +242,10 @@ export function createDefaultConfig(
     },
     collection: {
       name: collectionName,
-      fields: DEFAULT_COLLECTION_FIELDS
+      fields: DEFAULT_COLLECTION_FIELDS,
+      // Canonical convention: a post tagged `#no-search-index` is kept out of
+      // the index. Set to [] to disable, or add your own tags.
+      excludeTags: [...DEFAULT_EXCLUDE_TAGS]
     }
   };
 }

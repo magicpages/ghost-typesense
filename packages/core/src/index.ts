@@ -1,7 +1,7 @@
 import { TSGhostContentAPI, type Post as GhostPost } from '@ts-ghost/content-api';
 import { Client } from 'typesense';
 import type { CollectionFieldSchema } from 'typesense/lib/Typesense/Collection';
-import type { Config } from '@magicpages/ghost-typesense-config';
+import { type Config, DEFAULT_EXCLUDE_TAGS } from '@magicpages/ghost-typesense-config';
 
 /**
  * A single tag as it appears on a Ghost post, derived from the Content API's
@@ -34,10 +34,16 @@ export class GhostTypesenseManager {
   private typesense: Client;
   private config: Config;
   private collectionName: string;
+  // Normalized once at construction (see buildExcludeTagSet) rather than rebuilt
+  // per post during bulk indexing. Empty set = exclusion disabled.
+  private readonly excludeTagSet: Set<string>;
 
   constructor(config: Config) {
     this.config = config;
     this.collectionName = config.collection.name;
+    this.excludeTagSet = GhostTypesenseManager.buildExcludeTagSet(
+      config.collection.excludeTags ?? DEFAULT_EXCLUDE_TAGS
+    );
     this.ghost = new TSGhostContentAPI(
       config.ghost.url,
       config.ghost.key,
@@ -108,6 +114,44 @@ export class GhostTypesenseManager {
       tag.visibility === 'internal' ||
       (typeof tag.name === 'string' && tag.name.startsWith('#')) ||
       (typeof tag.slug === 'string' && tag.slug.startsWith('hash-'))
+    );
+  }
+
+  /**
+   * Normalize the configured exclusion tags into a lookup set: each value
+   * lowercased, plus the Ghost `hash-` slug form for any `#`-prefixed name — so
+   * `#no-search-index` also matches the slug `hash-no-search-index` even if the
+   * tag's display name was later changed. Built once per manager.
+   * @private
+   */
+  private static buildExcludeTagSet(tags: string[]): Set<string> {
+    const wanted = new Set<string>();
+    for (const t of tags) {
+      const v = t.toLowerCase();
+      wanted.add(v);
+      if (v.startsWith('#')) wanted.add(`hash-${v.slice(1)}`);
+    }
+    return wanted;
+  }
+
+  /**
+   * Is this post excluded from the index by tag? A publisher marks a post as
+   * non-searchable with a tag (the `#no-search-index` convention by default,
+   * overridable via `collection.excludeTags`). Matching mirrors isInternalTag's
+   * defensive shape — by tag name OR slug, case-insensitively. The field guards
+   * keep a malformed tag from throwing.
+   * @private
+   */
+  private isExcludedByTag(post: GhostPost): boolean {
+    if (this.excludeTagSet.size === 0) return false;
+
+    const tags = post.tags;
+    if (!tags || !Array.isArray(tags) || tags.length === 0) return false;
+
+    return tags.some(
+      (tag) =>
+        (typeof tag.name === 'string' && this.excludeTagSet.has(tag.name.toLowerCase())) ||
+        (typeof tag.slug === 'string' && this.excludeTagSet.has(tag.slug.toLowerCase()))
     );
   }
 
@@ -319,11 +363,13 @@ export class GhostTypesenseManager {
       allPosts = allPosts.concat(pageResponse.data);
     }
 
-    // Unless gated indexing is opted into, drop non-public posts so only
-    // public published content is indexed (the default behaviour).
+    // Drop posts the publisher has excluded by tag (e.g. #no-search-index)
+    // first, then — unless gated indexing is opted into — drop non-public posts
+    // so only public published content is indexed (the default behaviour).
+    const indexable = allPosts.filter((post) => !this.isExcludedByTag(post));
     const postsToIndex = this.config.collection.indexGatedContent
-      ? allPosts
-      : allPosts.filter((post) => ((post as { visibility?: string }).visibility || 'public') === 'public');
+      ? indexable
+      : indexable.filter((post) => ((post as { visibility?: string }).visibility || 'public') === 'public');
 
     console.log(`Found ${postsToIndex.length} posts to index (of ${allPosts.length} fetched)`);
     const documents = postsToIndex.map((post) => this.transformPost(post));
@@ -545,11 +591,21 @@ export class GhostTypesenseManager {
     const visibility = (post.data as { visibility?: string }).visibility || 'public';
     const collection = this.typesense.collections(this.collectionName);
 
+    // Excluded by tag (e.g. #no-search-index): ensure it isn't in the index, so
+    // an edit that *adds* the tag de-indexes the post. Remove any existing
+    // document rather than upserting it.
+    if (this.isExcludedByTag(post.data)) {
+      await collection.documents().delete({ filter_by: `id:${postId}` })
+        .catch((err: unknown) => console.error(`Failed to de-index excluded post ${postId}:`, err));
+      return;
+    }
+
     // Respect the opt-in: with gated indexing off, a non-public post must not
     // be indexed. Remove any existing document (e.g. a post that just turned
     // members-only) rather than upserting it.
     if (visibility !== 'public' && !this.config.collection.indexGatedContent) {
-      await collection.documents().delete({ filter_by: `id:${postId}` }).catch(() => {});
+      await collection.documents().delete({ filter_by: `id:${postId}` })
+        .catch((err: unknown) => console.error(`Failed to remove gated post ${postId} from the index:`, err));
       return;
     }
 

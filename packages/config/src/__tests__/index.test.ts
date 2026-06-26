@@ -235,3 +235,33 @@ describe('Gated content config', () => {
     expect(field?.optional).toBe(true);
   });
 });
+
+describe('excludeTags config', () => {
+  const base = {
+    ghost: { url: 'https://example.com', key: 'valid-key', version: 'v5.0' },
+    typesense: { nodes: [{ host: 'localhost', port: 8108, protocol: 'http' }], apiKey: 'valid-key' }
+  };
+
+  it('leaves excludeTags undefined when omitted (the indexer applies the default)', () => {
+    const config = validateConfig({ ...base, collection: { name: 'posts' } });
+    expect(config.collection.excludeTags).toBeUndefined();
+  });
+
+  it('accepts a custom exclude list', () => {
+    const config = validateConfig({
+      ...base,
+      collection: { name: 'posts', excludeTags: ['#no-search-index', 'Internal'] }
+    });
+    expect(config.collection.excludeTags).toEqual(['#no-search-index', 'Internal']);
+  });
+
+  it('accepts an empty array (disables exclusion)', () => {
+    const config = validateConfig({ ...base, collection: { name: 'posts', excludeTags: [] } });
+    expect(config.collection.excludeTags).toEqual([]);
+  });
+
+  it('createDefaultConfig surfaces the #no-search-index convention', () => {
+    const config = createDefaultConfig('https://example.com', 'k', 'host', 'tk');
+    expect(config.collection.excludeTags).toEqual(['#no-search-index']);
+  });
+});
