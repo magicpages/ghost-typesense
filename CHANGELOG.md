@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.8] - 2026-06-27
+
+### Added
+- **Exclude individual posts from search by tag.** Posts carrying a configured
+  tag — `#no-search-index` by default — are kept out of the index entirely, for
+  landing pages, legal/policy pages, or internal notes. Configure with
+  `collection.excludeTags` (an explicit `[]` disables it); values are matched
+  case-insensitively against a post's Ghost tag names and slugs, so the internal
+  tag form (`#no-search-index` / `hash-no-search-index`) is caught however the
+  tag was created. Through the webhook handler, an edit that adds the tag
+  de-indexes the post. Sits alongside the existing internal-tag filtering and
+  gated-content redaction as one canonical, index-time content policy.
+
 ## [2.0.7] - 2026-06-24
 
 ### Fixed
