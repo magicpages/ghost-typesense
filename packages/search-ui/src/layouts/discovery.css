@@ -552,14 +552,18 @@
   font-size: calc(0.9375 * var(--mp-rem));
 }
 
-/* Initial state (before any query): collapse the three-pane grid into a single
-   centered column so the empty facet rail and preview pane don't read as broken
-   columns. The welcoming prompt fills the surface instead. */
-.mp-search-discovery-initial .mp-search-discovery-body {
+/* Initial state (before any query) and the notice state (a failed request):
+   collapse the three-pane grid into a single centered column so the empty facet
+   rail and preview pane don't read as broken columns. A full-surface prompt
+   fills the space instead. */
+.mp-search-discovery-initial .mp-search-discovery-body,
+.mp-search-discovery-notice .mp-search-discovery-body {
   grid-template-columns: minmax(0, 1fr);
 }
 .mp-search-discovery-initial .mp-search-discovery-rail,
-.mp-search-discovery-initial .mp-search-discovery-preview {
+.mp-search-discovery-initial .mp-search-discovery-preview,
+.mp-search-discovery-notice .mp-search-discovery-rail,
+.mp-search-discovery-notice .mp-search-discovery-preview {
   display: none;
 }
 

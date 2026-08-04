@@ -14,8 +14,9 @@
 // Interface (see search.js buildLayoutContext + init): id, requiredFields(),
 // buildMarkup(), cacheElements(root), bindEvents(), onOpen(), onClose(),
 // focusInput(), setQuery(q), getQuery(), setTheme(isDark), renderInitial(),
-// renderLoading(), renderEmpty(query), renderResults(model, meta),
-// renderSuggestions(), renderFacets(counts, selected), handleKeydown(e).
+// renderLoading(), renderEmpty(query), renderError(query),
+// renderResults(model, meta), renderSuggestions(), renderFacets(counts,
+// selected), handleKeydown(e).
 
 const RECENT_KEY = 'mp-search-palette-recent';
 const RECENT_MAX = 5;
@@ -569,6 +570,27 @@ export default function createPaletteLayout(ctx) {
       currentModel = [];
       currentQuery = query || currentQuery;
       renderSurface();
+    },
+
+    // The request failed (timeout, offline, unreachable host) — a different
+    // surface from renderEmpty, which reports a query that matched nothing.
+    // The footer status is cleared so the stale "Searching…" hint goes away and
+    // the alert block is the only message on screen.
+    renderError(query) {
+      currentModel = [];
+      currentFacetCounts = [];
+      currentQuery = query || currentQuery;
+      flatItems = [];
+      activeIndex = 0;
+      if (refs.results) {
+        refs.results.innerHTML = `
+          <div class="${L}-empty" role="alert">
+            <p class="${L}-empty-title">${ctx.t('errorMessage')}</p>
+            <p class="${L}-empty-sub">${ctx.t('errorHint')}</p>
+          </div>`;
+      }
+      applyActive();
+      setStatus('');
     },
 
     renderResults(model, meta) {

@@ -123,6 +123,13 @@ import Typesense from 'typesense';
     // CSS class prefix to avoid conflicts (kept for consistency)
     const CSS_PREFIX = 'mp-search';
 
+    // Default Typesense client timeout. The first search of a session pays DNS
+    // + TCP + TLS to the search host before the query itself goes out, so a
+    // tighter budget aborts the handshake on a high-latency or lossy link
+    // (a distant VPN exit node is enough). Overridable per site with
+    // `connectionTimeoutSeconds`.
+    const DEFAULT_CONNECTION_TIMEOUT_SECONDS = 5;
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -163,6 +170,11 @@ import Typesense from 'typesense';
                 emptyStateMessage: 'Start typing to search...',
                 loadingMessage: 'Searching...',
                 noResultsMessage: 'No results found for your search',
+                // Shown when the search request itself failed (timeout, offline,
+                // unreachable host) — never for a query that genuinely matched
+                // nothing.
+                errorMessage: 'Search is temporarily unavailable',
+                errorHint: 'Check your connection and try again.',
                 navigateHint: 'to navigate',
                 closeHint: 'to close',
                 ariaSearchLabel: 'Search',
@@ -690,6 +702,10 @@ import Typesense from 'typesense';
                                         <p>${this.t('noResultsMessage')}</p>
                                     </div>
                                 </div>
+                                <div id="${CSS_PREFIX}-error" class="${CSS_PREFIX}-error ${CSS_PREFIX}-hidden" role="alert">
+                                    <p class="${CSS_PREFIX}-error-title">${this.t('errorMessage')}</p>
+                                    <p class="${CSS_PREFIX}-error-hint">${this.t('errorHint')}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -710,6 +726,7 @@ import Typesense from 'typesense';
             this.commonSearches = this.shadowRoot.querySelector(`.${CSS_PREFIX}-common-searches`);
             this.loadingState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-loading`);
             this.emptyState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-empty`);
+            this.errorState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-error`);
         }
 
         getCommonSearchesHtml() {
@@ -1027,6 +1044,49 @@ import Typesense from 'typesense';
             }
         }
 
+        // Typesense client options, with the connection budget and retry
+        // behaviour overridable per site. Values must be numbers in a sane
+        // range; anything else falls back to the default (for the timeout) or
+        // to typesense-js's own default (for the retry options), so a typo in
+        // the host's config can never disable retries or set a 0s timeout.
+        typesenseClientOptions() {
+            const { connectionTimeoutSeconds, numRetries, retryIntervalSeconds } = this.config;
+
+            const options = {
+                nodes: this.config.typesenseNodes,
+                apiKey: this.config.typesenseApiKey,
+                connectionTimeoutSeconds: Number.isFinite(connectionTimeoutSeconds) && connectionTimeoutSeconds > 0
+                    ? connectionTimeoutSeconds
+                    : DEFAULT_CONNECTION_TIMEOUT_SECONDS
+            };
+
+            if (Number.isInteger(numRetries) && numRetries >= 0) {
+                options.numRetries = numRetries;
+            }
+            if (Number.isFinite(retryIntervalSeconds) && retryIntervalSeconds >= 0) {
+                options.retryIntervalSeconds = retryIntervalSeconds;
+            }
+
+            return options;
+        }
+
+        // The Typesense client, created on first search and reused afterwards.
+        getTypesenseClient() {
+            if (!this.typesenseClient) {
+                this.typesenseClient = new Typesense.Client(this.typesenseClientOptions());
+            }
+            return this.typesenseClient;
+        }
+
+        // A search request that never completed — timeout, offline, unreachable
+        // host. Logged so a failing connection is diagnosable from the reader's
+        // console (typesense-js logs its own retry warnings; this identifies the
+        // widget as the caller and carries the final error). The reader sees the
+        // translated error state instead, never an empty-results panel.
+        logSearchError(error) {
+            console.error('MagicPagesSearch: search request failed', error);
+        }
+
         async handleSearch(query) {
             query = query?.trim();
 
@@ -1039,6 +1099,7 @@ import Typesense from 'typesense';
                 if (this.hitsList) this.hitsList.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.commonSearches) this.commonSearches.classList.remove(`${CSS_PREFIX}-hidden`);
                 if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
+                if (this.errorState) this.errorState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
                 return;
@@ -1049,14 +1110,7 @@ import Typesense from 'typesense';
             if (this.activeLayout) {
                 this.activeLayout.renderLoading();
                 try {
-                    if (!this.typesenseClient) {
-                        this.typesenseClient = new Typesense.Client({
-                            nodes: this.config.typesenseNodes,
-                            apiKey: this.config.typesenseApiKey,
-                            connectionTimeoutSeconds: 2
-                        });
-                    }
-                    const results = await this.typesenseClient
+                    const results = await this.getTypesenseClient()
                         .collections(this.config.collectionName)
                         .documents()
                         .search({ q: query, ...this.getSearchParameters() });
@@ -1075,7 +1129,15 @@ import Typesense from 'typesense';
                     const model = results.hits.map((hit, i) => this.normalizeHit(hit, i));
                     this.activeLayout.renderResults(model, { query, found: resultCount, facetCounts: results.facet_counts });
                 } catch (error) {
-                    this.activeLayout.renderEmpty(query);
+                    this.logSearchError(error);
+                    // A failed request is not an empty archive. Layout chunks
+                    // are fetched separately from the core, so fall back to the
+                    // empty surface for a layout that predates renderError.
+                    if (typeof this.activeLayout.renderError === 'function') {
+                        this.activeLayout.renderError(query);
+                    } else {
+                        this.activeLayout.renderEmpty(query);
+                    }
                 }
                 return;
             }
@@ -1085,24 +1147,16 @@ import Typesense from 'typesense';
             if (this.hitsList) this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             if (this.loadingState) this.loadingState.classList.remove(`${CSS_PREFIX}-hidden`);
             if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
+            if (this.errorState) this.errorState.classList.add(`${CSS_PREFIX}-hidden`);
 
             try {
-                // Initialize Typesense client if not already initialized
-                if (!this.typesenseClient) {
-                    this.typesenseClient = new Typesense.Client({
-                        nodes: this.config.typesenseNodes,
-                        apiKey: this.config.typesenseApiKey,
-                        connectionTimeoutSeconds: 2
-                    });
-                }
-
                 const searchParams = this.getSearchParameters();
                 const searchParameters = {
                     q: query,
                     ...searchParams
                 };
 
-                const results = await this.typesenseClient
+                const results = await this.getTypesenseClient()
                     .collections(this.config.collectionName)
                     .documents()
                     .search(searchParameters);
@@ -1199,8 +1253,12 @@ import Typesense from 'typesense';
                 this.hitsList.classList.toggle(`${CSS_PREFIX}-grid`, this.config.template === 'grid');
                 this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             } catch (error) {
+                this.logSearchError(error);
+                // The request failed, so show the error state — not the empty
+                // state, which would tell the reader the archive has nothing on
+                // their topic. The empty state was hidden before the request.
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
-                if (this.emptyState) this.emptyState.classList.remove(`${CSS_PREFIX}-hidden`);
+                if (this.errorState) this.errorState.classList.remove(`${CSS_PREFIX}-hidden`);
                 if (this.hitsList) {
                     this.hitsList.innerHTML = '';
                     this.hitsList.classList.add(`${CSS_PREFIX}-hidden`);

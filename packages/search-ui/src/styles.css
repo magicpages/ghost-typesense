@@ -683,6 +683,27 @@
     font-size: calc(1 * var(--mp-rem));
 }
 
+/* Request-failure state. Deliberately distinct from the empty state above: a
+   reader whose request never reached the search host must not be told the
+   archive has nothing on their topic. */
+.mp-search-error {
+    padding: calc(2.5 * var(--mp-rem)) calc(1.5 * var(--mp-rem));
+    text-align: center;
+}
+
+.mp-search-error-title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: calc(1 * var(--mp-rem));
+    font-weight: 600;
+}
+
+.mp-search-error-hint {
+    margin: calc(0.375 * var(--mp-rem)) 0 0;
+    color: var(--color-text-secondary);
+    font-size: calc(0.875 * var(--mp-rem));
+}
+
 /* Close button */
 .mp-search-close {
     position: fixed;

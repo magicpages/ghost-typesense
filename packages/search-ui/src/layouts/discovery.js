@@ -63,6 +63,15 @@ export default function createDiscoveryLayout(ctx) {
       + `<span aria-hidden="true">🔒</span> ${esc(ctx.t('membersLabel'))}</span>`;
   }
 
+  // Panel display state. 'initial' (before any query) and 'notice' (a failed
+  // request) both collapse the three-pane grid to a single centred column,
+  // because neither has facets or a preview to show; null restores the grid.
+  function setPanelState(state) {
+    if (!refs.panel) return;
+    refs.panel.classList.toggle(`${P}-discovery-initial`, state === 'initial');
+    refs.panel.classList.toggle(`${P}-discovery-notice`, state === 'notice');
+  }
+
   // ---- Selection ----------------------------------------------------------
 
   function applySelectionClasses() {
@@ -412,7 +421,7 @@ export default function createDiscoveryLayout(ctx) {
     renderInitial() {
       model = [];
       selectedIndex = -1;
-      if (refs.panel) refs.panel.classList.add(`${P}-discovery-initial`);
+      setPanelState('initial');
       if (refs.results) {
         refs.results.innerHTML =
           `<div class="${P}-discovery-prompt">`
@@ -431,7 +440,7 @@ export default function createDiscoveryLayout(ctx) {
     },
 
     renderLoading() {
-      if (refs.panel) refs.panel.classList.remove(`${P}-discovery-initial`);
+      setPanelState(null);
       if (refs.results && model.length === 0) {
         refs.results.innerHTML = `<div class="${P}-discovery-empty">${esc(ctx.t('loadingMessage'))}</div>`;
       }
@@ -440,7 +449,7 @@ export default function createDiscoveryLayout(ctx) {
     renderEmpty(query) {
       model = [];
       selectedIndex = -1;
-      if (refs.panel) refs.panel.classList.remove(`${P}-discovery-initial`);
+      setPanelState(null);
       const q = (query || '').trim();
       if (refs.results) {
         refs.results.innerHTML = `<div class="${P}-discovery-empty">${esc(ctx.t('noResultsMessage'))}</div>`;
@@ -452,9 +461,34 @@ export default function createDiscoveryLayout(ctx) {
       if (refs.count) refs.count.textContent = q ? `0 ${ctx.t('resultsLabel')}` : '';
     },
 
+    // The request failed (timeout, offline, unreachable host). Distinct from
+    // renderEmpty: it fills the surface with an alert rather than reporting zero
+    // results, and clears the rail/preview/count so nothing stale remains.
+    renderError() {
+      model = [];
+      selectedIndex = -1;
+      setPanelState('notice');
+      if (refs.results) {
+        refs.results.innerHTML =
+          `<div class="${P}-discovery-prompt" role="alert">`
+          + `<div class="${P}-discovery-prompt-icon" aria-hidden="true">`
+          + '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>'
+          + '<line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>'
+          + '</svg></div>'
+          + `<p class="${P}-discovery-prompt-title">${esc(ctx.t('errorMessage'))}</p>`
+          + `<p class="${P}-discovery-prompt-hint">${esc(ctx.t('errorHint'))}</p>`
+          + '</div>';
+        refs.results.removeAttribute('aria-activedescendant');
+      }
+      if (refs.preview) refs.preview.innerHTML = '';
+      if (refs.facets) refs.facets.innerHTML = '';
+      if (refs.count) refs.count.textContent = '';
+    },
+
     renderResults(nextModel, meta) {
       if (!refs.results) return;
-      if (refs.panel) refs.panel.classList.remove(`${P}-discovery-initial`);
+      setPanelState(null);
 
       // Preserve the selected post (by id) across the re-render where possible;
       // otherwise default to the first hit.
