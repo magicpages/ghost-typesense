@@ -28,7 +28,10 @@ const plugins = () => [
     format: { comments: false },
     compress: {
       passes: 3,
-      drop_console: true,
+      // Strip development logging, but keep console.error: a failed search
+      // request logs there, and that line is what makes a reader's broken
+      // connection diagnosable from their own browser console.
+      drop_console: ['log', 'info', 'debug', 'warn', 'trace'],
       drop_debugger: true,
       pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
       unsafe: true,

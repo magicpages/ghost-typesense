@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '../search.js';
 
 // Build an element with shadow content rendered, but without going through
@@ -109,6 +109,48 @@ describe('getSearchParameters — facets', () => {
   it('omits filter_by entirely when no facet is selected and no publisher filter is set', () => {
     const el = mountWithConfig(facetConfig);
     expect(el.getSearchParameters().filter_by).toBeUndefined();
+  });
+});
+
+describe('typesenseClientOptions', () => {
+  it('defaults the connection timeout to 5s (the handshake needs more than 2s on a slow link)', () => {
+    expect(mountWithConfig().typesenseClientOptions().connectionTimeoutSeconds).toBe(5);
+  });
+
+  it('honors a host-configured connectionTimeoutSeconds', () => {
+    const options = mountWithConfig({ connectionTimeoutSeconds: 12 }).typesenseClientOptions();
+    expect(options.connectionTimeoutSeconds).toBe(12);
+  });
+
+  it('falls back to the default for a non-positive or non-numeric timeout', () => {
+    for (const connectionTimeoutSeconds of [0, -1, '8', null, NaN]) {
+      const options = mountWithConfig({ connectionTimeoutSeconds }).typesenseClientOptions();
+      expect(options.connectionTimeoutSeconds).toBe(5);
+    }
+  });
+
+  it('passes numRetries and retryIntervalSeconds through when configured', () => {
+    const options = mountWithConfig({ numRetries: 1, retryIntervalSeconds: 0.5 }).typesenseClientOptions();
+    expect(options.numRetries).toBe(1);
+    expect(options.retryIntervalSeconds).toBe(0.5);
+  });
+
+  it("omits the retry options entirely when unset, keeping typesense-js's own defaults", () => {
+    const options = mountWithConfig().typesenseClientOptions();
+    expect(options).not.toHaveProperty('numRetries');
+    expect(options).not.toHaveProperty('retryIntervalSeconds');
+  });
+
+  it('ignores invalid retry options rather than disabling retries', () => {
+    const options = mountWithConfig({ numRetries: -1, retryIntervalSeconds: '2' }).typesenseClientOptions();
+    expect(options).not.toHaveProperty('numRetries');
+    expect(options).not.toHaveProperty('retryIntervalSeconds');
+  });
+
+  it('carries the node list and search key', () => {
+    const options = mountWithConfig().typesenseClientOptions();
+    expect(options.nodes).toEqual([{ host: 'localhost', port: '8108', protocol: 'http' }]);
+    expect(options.apiKey).toBe('search-only');
   });
 });
 
@@ -272,6 +314,122 @@ describe('facet rendering', () => {
     const el = mountWithConfig({ facets: [{ field: 'tags.name' }] });
     el.renderFacets([]);
     expect(el.facetsContainer.classList.contains('mp-search-hidden')).toBe(true);
+  });
+});
+
+// A failed request must never render the empty state: telling a reader on a
+// timing-out connection that nothing matched their query is what took four
+// rounds of support email to unpick (issue #55).
+describe('request failures', () => {
+  const HIDDEN = 'mp-search-hidden';
+  const clientRejecting = (error) => ({
+    collections: () => ({ documents: () => ({ search: async () => { throw error; } }) })
+  });
+  const clientReturning = (hits) => ({
+    collections: () => ({ documents: () => ({ search: async () => ({ found: hits.length, hits }) }) })
+  });
+  const hit = {
+    document: { id: 'p1', title: 'Composting', url: 'https://x/p/', excerpt: 'How to', published_at: 1700000000000 }
+  };
+
+  let errorLog;
+  beforeEach(() => {
+    errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    errorLog.mockRestore();
+  });
+
+  it('shows the error state — not the empty state — when the request fails', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientRejecting(new Error('timeout of 5000ms exceeded'));
+
+    await el.handleSearch('composting');
+
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(false);
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.loadingState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.hitsList.innerHTML).toBe('');
+    expect(el.hitsList.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('logs the underlying error so a broken connection is diagnosable', async () => {
+    const el = mountWithConfig();
+    const failure = new Error('ECONNABORTED timeout of 5000ms exceeded');
+    el.typesenseClient = clientRejecting(failure);
+
+    await el.handleSearch('composting');
+
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('MagicPagesSearch'), failure);
+  });
+
+  it('still shows the empty state for a query that genuinely matched nothing', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientReturning([]);
+
+    await el.handleSearch('nothing matches this');
+
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(false);
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('clears the error state once a later search succeeds', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientRejecting(new Error('offline'));
+    await el.handleSearch('composting');
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(false);
+
+    el.typesenseClient = clientReturning([hit]);
+    await el.handleSearch('composting');
+
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.hitsList.classList.contains(HIDDEN)).toBe(false);
+    expect(el.hitsList.innerHTML).toContain('Composting');
+  });
+
+  it('emits no analytics events for a request that never completed', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    global.fetch = fetchMock;
+    const el = mountWithConfig({ analytics: { endpoint: 'https://e/queries', siteId: 's' } });
+    el.typesenseClient = clientRejecting(new Error('timeout'));
+
+    await el.handleSearch('composting');
+
+    // Reporting a failure as a zero_result would poison the publisher's
+    // "queries with no results" report.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('routes an alternative layout to renderError instead of its empty surface', async () => {
+    const el = mountWithConfig({ uiStyle: 'discovery' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderError: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn()
+    };
+    el.typesenseClient = clientRejecting(new Error('timeout'));
+
+    await el.handleSearch('composting');
+
+    expect(el.activeLayout.renderError).toHaveBeenCalledWith('composting');
+    expect(el.activeLayout.renderEmpty).not.toHaveBeenCalled();
+  });
+
+  it('falls back to renderEmpty for a layout chunk that predates renderError', async () => {
+    const el = mountWithConfig({ uiStyle: 'discovery' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn()
+    };
+    el.typesenseClient = clientRejecting(new Error('timeout'));
+
+    await el.handleSearch('composting');
+
+    expect(el.activeLayout.renderEmpty).toHaveBeenCalledWith('composting');
   });
 });
 

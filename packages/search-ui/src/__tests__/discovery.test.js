@@ -60,6 +60,42 @@ function modelWith(featureImage) {
   ];
 }
 
+describe('discovery request-failure state', () => {
+  it('renders an alert with the error strings, not the no-results message', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderError('composting');
+
+    const results = shadow.getElementById('mp-search-discovery-results');
+    const alert = results.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    // makeCtx().t echoes the key, so the keys themselves are the assertion.
+    expect(alert.textContent).toContain('errorMessage');
+    expect(alert.textContent).toContain('errorHint');
+    expect(results.textContent).not.toContain('noResultsMessage');
+  });
+
+  it('collapses the panel to a single column and clears the rail, preview and count', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderError('composting');
+
+    const panel = shadow.getElementById('mp-search-discovery');
+    expect(panel.classList.contains('mp-search-discovery-notice')).toBe(true);
+    expect(shadow.getElementById('mp-search-facets').innerHTML).toBe('');
+    expect(shadow.getElementById('mp-search-discovery-preview').innerHTML).toBe('');
+    expect(shadow.querySelector('.mp-search-discovery-count').textContent).toBe('');
+  });
+
+  it('drops the notice state again once results render', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderError('composting');
+    layout.renderResults(modelWith(null), { found: 1 });
+
+    const panel = shadow.getElementById('mp-search-discovery');
+    expect(panel.classList.contains('mp-search-discovery-notice')).toBe(false);
+  });
+});
+
 describe('discovery preview hero', () => {
   it('omits the hero entirely when the selected result has no feature image', () => {
     const { layout, shadow } = mountDiscovery();

@@ -99,6 +99,28 @@ window.__MP_SEARCH_CONFIG__ = {
 | `uiStyle` | `String` | No | `'modal'` | Overall layout: `'modal'`, `'palette'`, or `'discovery'` (see [UI layouts](#ui-layouts)) |
 | `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
+| `connectionTimeoutSeconds` | `Number` | No | `5` | How long a single search request may take before the browser aborts it (see [Connection tuning](#connection-tuning)) |
+| `numRetries` | `Number` | No | typesense-js default | How many times a failed request is retried across your nodes |
+| `retryIntervalSeconds` | `Number` | No | typesense-js default | Pause between those retries |
+
+### Connection tuning
+
+The first search of a reader's session pays DNS + TCP + TLS to your search host before the query itself goes out. On a high-latency or lossy link — a VPN with a distant exit node, patchy mobile — that handshake alone can exhaust a tight budget, and the request is aborted client-side (`ECONNABORTED` in the console) while your search server sits idle.
+
+The default budget is **5 seconds** per request. Raise it if your readers are far from your search host:
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    connectionTimeoutSeconds: 8,
+    numRetries: 3,           // optional — defaults come from typesense-js
+    retryIntervalSeconds: 0.1
+};
+```
+
+All three must be numbers; a non-numeric or out-of-range value is ignored in favour of the default, so a typo can't disable retries or set a zero-second timeout.
+
+When a request does fail, readers see a distinct "Search is temporarily unavailable" panel rather than the no-results message — a failed request is never reported as an empty archive. The error is also logged to the browser console (`MagicPagesSearch: search request failed`), which is the quickest way to tell a connection problem from a genuinely empty result set. Both strings are translatable (`errorMessage`, `errorHint`).
 
 ### Search Fields Configuration
 
@@ -507,7 +529,9 @@ window.__MP_SEARCH_CONFIG__ = {
 | `commonSearchesTitle` | "Common searches" | Heading for common searches section |
 | `emptyStateMessage` | "Start typing to search..." | Message shown when search is empty |
 | `loadingMessage` | "Searching..." | Message shown while searching |
-| `noResultsMessage` | "No results found for your search" | Message when no results found |
+| `noResultsMessage` | "No results found for your search" | Message when a query genuinely matched nothing |
+| `errorMessage` | "Search is temporarily unavailable" | Heading shown when the search request itself failed (timeout, offline, unreachable host) |
+| `errorHint` | "Check your connection and try again." | Second line of that failure state |
 | `navigateHint` | "to navigate" | Keyboard hint for navigation |
 | `closeHint` | "to close" | Keyboard hint for closing |
 | `ariaSearchLabel` | "Search" | ARIA label for search input |
@@ -534,6 +558,8 @@ i18n: {
   emptyStateMessage: 'Beginnen Sie mit der Eingabe...',
   loadingMessage: 'Suche läuft...',
   noResultsMessage: 'Keine Ergebnisse gefunden',
+  errorMessage: 'Die Suche ist gerade nicht verfügbar',
+  errorHint: 'Prüfe deine Verbindung und versuche es erneut.',
   navigateHint: 'zum Navigieren',
   closeHint: 'zum Schließen',
   ariaSearchLabel: 'Suche',
@@ -550,6 +576,8 @@ i18n: {
   emptyStateMessage: 'Comienza a escribir para buscar...',
   loadingMessage: 'Buscando...',
   noResultsMessage: 'No se encontraron resultados',
+  errorMessage: 'La búsqueda no está disponible temporalmente',
+  errorHint: 'Comprueba tu conexión e inténtalo de nuevo.',
   navigateHint: 'para navegar',
   closeHint: 'para cerrar',
   ariaSearchLabel: 'Buscar',
@@ -566,6 +594,8 @@ i18n: {
   emptyStateMessage: 'Commencez à taper pour rechercher...',
   loadingMessage: 'Recherche en cours...',
   noResultsMessage: 'Aucun résultat trouvé',
+  errorMessage: 'La recherche est momentanément indisponible',
+  errorHint: 'Vérifiez votre connexion et réessayez.',
   navigateHint: 'pour naviguer',
   closeHint: 'pour fermer',
   ariaSearchLabel: 'Rechercher',
