@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-04
+
+### Fixed
+- **Failed search requests were shown to readers as "No results found".** Every
+  error — a timed-out request, an offline reader, an unreachable search host —
+  rendered the same panel as a query that genuinely matched nothing, so a reader
+  on a slow or high-latency connection was told the archive had nothing on their
+  topic while the search server sat idle. The error was swallowed with no trace
+  anywhere, which is why one reported case took four rounds of support email to
+  pin on the connection rather than the index. Failures now render their own
+  state — "Search is temporarily unavailable" / "Check your connection and try
+  again." — in all three layouts: a `role="alert"` block in the modal, an alert
+  surface in the palette (with the stale "Searching…" status cleared), and a
+  full-surface prompt in discovery (where the facet rail and preview collapse,
+  as they do in the initial state). Both strings are translatable through the
+  new `errorMessage` and `errorHint` i18n keys. The underlying error is now
+  logged as `MagicPagesSearch: search request failed`, so the next failing
+  connection is diagnosable from the reader's own browser console. Search-ui
+  bundle change — publishing refreshes the CDN; redeploy the rebuilt bundle to
+  sites.
+
+### Added
+- **The search client's connection budget is configurable.**
+  `connectionTimeoutSeconds` in `window.__MP_SEARCH_CONFIG__` replaces a
+  hardcoded 2 s timeout, and now defaults to 5 s. The first search of a session
+  pays DNS + TCP + TLS to the search host before the query itself goes out, and
+  2 s could not cover that handshake on a lossy link or a VPN with a distant
+  exit node — the request was aborted client-side while the backend was idle.
+  `numRetries` and `retryIntervalSeconds` are exposed the same way, falling back
+  to typesense-js's own defaults when unset. All three are validated, so a typo
+  in a site's config can't disable retries or set a zero-second timeout.
+
 ## [2.0.8] - 2026-06-27
 
 ### Added
