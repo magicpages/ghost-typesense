@@ -125,3 +125,75 @@ describe('facet filter composition', () => {
     expect(el.composeFilterBy(undefined)).toBe('authors:=[`Jannis`]');
   });
 });
+
+// The correction offered for a mistyped query is derived from the tokens the
+// typo-tolerant retry actually matched in the index, so the suggestion is always
+// a word the publisher has written — never a guess from a client-side dictionary.
+describe('didYouMeanFromHits', () => {
+  const el = makeInstance();
+
+  const hitMatching = (...tokens) => ({
+    document: { id: 'p1' },
+    highlight: { title: { matched_tokens: tokens, snippet: '' } }
+  });
+
+  it('replaces a mistyped word with the token the index actually holds', () => {
+    expect(el.didYouMeanFromHits('compsting', [hitMatching('composting')])).toBe('composting');
+  });
+
+  it('corrects only the mistyped word in a longer query', () => {
+    const hits = [hitMatching('composting', 'guide')];
+    expect(el.didYouMeanFromHits('compsting guide', hits)).toBe('composting guide');
+  });
+
+  it('returns null when every word is already in the index, so nothing is offered', () => {
+    // The words were right; the query missed for some other reason (an active
+    // filter, say). "Did you mean <exactly what you typed>?" helps nobody.
+    expect(el.didYouMeanFromHits('composting guide', [hitMatching('composting', 'guide')])).toBeNull();
+  });
+
+  it('returns null when the retry reported no matched tokens', () => {
+    expect(el.didYouMeanFromHits('compsting', [{ document: { id: 'p1' } }])).toBeNull();
+  });
+
+  it('leaves a word under four characters alone (Typesense would not correct it either)', () => {
+    // min_len_1typo defaults to 4: a three-letter word gets no typo budget on
+    // the server, so proposing a correction for one would be the client
+    // inventing a match the index never made.
+    expect(el.didYouMeanFromHits('teh', [hitMatching('the')])).toBeNull();
+  });
+
+  it('allows one typo for a medium word and two for a long one', () => {
+    expect(el.didYouMeanFromHits('gost', [hitMatching('ghost')])).toBe('ghost');
+    expect(el.didYouMeanFromHits('typsense', [hitMatching('typesense')])).toBe('typesense');
+  });
+
+  it('rejects a candidate beyond the typo budget rather than suggesting a stretch', () => {
+    expect(el.didYouMeanFromHits('gardening', [hitMatching('composting')])).toBeNull();
+  });
+
+  it('prefers the nearest candidate when several are within budget', () => {
+    expect(el.didYouMeanFromHits('gardeng', [hitMatching('gardens', 'gardening')])).toBe('gardens');
+  });
+
+  it('reads tokens from nested highlight shapes (array fields such as tags.name)', () => {
+    const hit = {
+      document: { id: 'p1' },
+      highlight: { tags: [{ name: { matched_tokens: ['composting'] } }] }
+    };
+    expect(el.didYouMeanFromHits('compsting', [hit])).toBe('composting');
+  });
+
+  it('reads tokens from the older `highlights` array shape', () => {
+    const hit = {
+      document: { id: 'p1' },
+      highlights: [{ field: 'title', matched_tokens: ['composting'] }]
+    };
+    expect(el.didYouMeanFromHits('compsting', [hit])).toBe('composting');
+  });
+
+  it('matches case-insensitively but offers the index spelling', () => {
+    expect(el.didYouMeanFromHits('Compsting', [hitMatching('Composting')])).toBe('Composting');
+    expect(el.didYouMeanFromHits('composting', [hitMatching('Composting')])).toBeNull();
+  });
+});

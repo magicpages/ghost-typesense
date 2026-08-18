@@ -365,6 +365,14 @@
   color: var(--color-text-secondary);
 }
 
+/* "Did you mean …" row. It reuses the shared row styling because it behaves
+   like the other refining rows (recent, tag, author) — only the suggested term
+   needs a colour of its own. */
+.mp-search-palette .mp-search-palette-suggest-term {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
 /* Footer command bar */
 .mp-search-palette .mp-search-palette-footer {
   display: flex;

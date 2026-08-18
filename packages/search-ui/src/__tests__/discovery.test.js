@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import createDiscoveryLayout from '../layouts/discovery.js';
 
 // Hosts mounted during a test, torn down afterwards so DOM fixtures never leak
@@ -23,21 +23,25 @@ function makeCtx() {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;'),
-    t: (k) => k
+    // Echoing the key is enough for most assertions. didYouMeanLabel carries a
+    // {q} placeholder the layout has to substitute, so it needs a real template.
+    t: (k) => (k === 'didYouMeanLabel' ? 'Did you mean {q}?' : k),
+    search: vi.fn()
   };
 }
 
 // Mount the layout into a real shadow root (so getElementById works the same as
 // in the live widget) and return the layout plus its cached preview element.
 function mountDiscovery() {
-  const layout = createDiscoveryLayout(makeCtx());
+  const ctx = makeCtx();
+  const layout = createDiscoveryLayout(ctx);
   const host = document.createElement('div');
   document.body.appendChild(host);
   mountedHosts.push(host);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = layout.buildMarkup();
   layout.cacheElements(shadow);
-  return { layout, shadow };
+  return { layout, shadow, ctx };
 }
 
 function modelWith(featureImage) {
@@ -117,5 +121,48 @@ describe('discovery preview hero', () => {
     const img = preview.querySelector('img.mp-search-discovery-hero');
     expect(img).not.toBeNull();
     expect(img.getAttribute('src')).toBe('https://cdn.example.com/p.jpg');
+  });
+});
+
+describe('discovery did-you-mean prompt', () => {
+  it('adds the correction under the no-results message, keeping both on screen', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const empty = shadow.querySelector('.mp-search-discovery-empty');
+    expect(empty.textContent).toContain('noResultsMessage');
+    const button = empty.querySelector('.mp-search-discovery-suggest');
+    expect(button.dataset.search).toBe('composting');
+    expect(button.textContent).toBe('Did you mean composting?');
+  });
+
+  it('escapes a suggested term rather than letting it into the markup', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('x');
+    layout.renderDidYouMean('"><img src=x onerror=alert(1)>');
+
+    const empty = shadow.querySelector('.mp-search-discovery-empty');
+    expect(empty.querySelector('img')).toBeNull();
+  });
+
+  it('adds nothing when the surface is not the empty state (a failed request)', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderError('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(shadow.querySelector('.mp-search-discovery-suggest')).toBeNull();
+  });
+
+  it('runs the corrected term and puts it in the input when clicked', () => {
+    const { layout, shadow, ctx } = mountDiscovery();
+    layout.bindEvents();
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    shadow.querySelector('.mp-search-discovery-suggest').click();
+
+    expect(ctx.search).toHaveBeenCalledWith('composting');
+    expect(shadow.querySelector('.mp-search-discovery-input').value).toBe('composting');
   });
 });

@@ -15,8 +15,8 @@
 // buildMarkup(), cacheElements(root), bindEvents(), onOpen(), onClose(),
 // focusInput(), setQuery(q), getQuery(), setTheme(isDark), renderInitial(),
 // renderLoading(), renderEmpty(query), renderError(query),
-// renderResults(model, meta), renderSuggestions(), renderFacets(counts,
-// selected), handleKeydown(e).
+// renderDidYouMean(term), renderResults(model, meta), renderSuggestions(),
+// renderFacets(counts, selected), handleKeydown(e).
 
 const RECENT_KEY = 'mp-search-palette-recent';
 const RECENT_MAX = 5;
@@ -44,6 +44,8 @@ export default function createPaletteLayout(ctx) {
   let currentModel = [];
   let currentFacetCounts = [];
   let currentQuery = '';
+  // Spelling correction offered for a query that matched nothing, or null.
+  let currentSuggestion = null;
 
   // Recent searches, loaded from localStorage and mirrored in memory.
   let recent = loadRecent();
@@ -176,13 +178,14 @@ export default function createPaletteLayout(ctx) {
   }
 
   // Activate the row at index. newTab opens posts in a new tab. Posts navigate
-  // (after a click-track + recent push); recent/tag/author rows refine the
-  // query by typing their value back into the input.
+  // (after a click-track + recent push); recent/tag/author/suggest rows refine
+  // the query by typing their value back into the input.
   function activate(index, newTab) {
     const item = flatItems[index];
     if (!item) return;
 
-    if (item.kind === 'recent' || item.kind === 'tag' || item.kind === 'author') {
+    if (item.kind === 'recent' || item.kind === 'tag' || item.kind === 'author' ||
+        item.kind === 'suggest') {
       // Ignore malformed rows so we never type the literal "undefined" into the
       // input or issue a query for it.
       const value = item.value;
@@ -287,6 +290,29 @@ export default function createPaletteLayout(ctx) {
       </div>`;
   }
 
+  // The spelling-correction prompt, built as a navigable row so Enter picks it
+  // up like any other refining row — the reader never has to reach for the
+  // mouse to accept a correction.
+  function suggestRowHtml() {
+    if (!currentSuggestion) return '';
+
+    flatItems.push({ kind: 'suggest', value: currentSuggestion });
+    const idx = flatItems.length - 1;
+    const label = ctx
+      .t('didYouMeanLabel')
+      .replace('{q}', `<strong class="${L}-suggest-term">${ctx.escapeHtmlAttr(currentSuggestion)}</strong>`);
+
+    return `
+      <div class="${L}-group" role="group">
+        <div class="${L}-row ${L}-row-suggest" id="${L}-row-${idx}"
+             role="option" aria-selected="false" data-index="${idx}">
+          <span class="${L}-row-icon" aria-hidden="true">↳</span>
+          <span class="${L}-row-title">${label}</span>
+          <span class="${L}-row-enter" aria-hidden="true">↵</span>
+        </div>
+      </div>`;
+  }
+
   // In-surface keyboard navigation. Returns true when the key was consumed so
   // the core (which owns Esc and Cmd/Ctrl+K) can tell whether to act on it.
   function handleKeydownImpl(e) {
@@ -339,7 +365,7 @@ export default function createPaletteLayout(ctx) {
         <div class="${L}-empty">
           <p class="${L}-empty-title">${ctx.t('paletteNoResultsTitle').replace('{q}', ctx.escapeHtmlAttr(currentQuery))}</p>
           <p class="${L}-empty-sub">${ctx.t('paletteNoResultsSub')}</p>
-        </div>`;
+        </div>${suggestRowHtml()}`;
       activeIndex = 0;
       applyActive();
       setStatus(pluralResults(0));
@@ -526,6 +552,7 @@ export default function createPaletteLayout(ctx) {
       currentQuery = '';
       currentModel = [];
       currentFacetCounts = [];
+      currentSuggestion = null;
       flatItems = [];
       activeIndex = 0;
     },
@@ -556,6 +583,7 @@ export default function createPaletteLayout(ctx) {
     renderInitial() {
       currentModel = [];
       currentFacetCounts = [];
+      currentSuggestion = null;
       activeIndex = 0;
       setStatus('');
       if (refs.results) refs.results.innerHTML = recentSurfaceHtml();
@@ -568,7 +596,17 @@ export default function createPaletteLayout(ctx) {
 
     renderEmpty(query) {
       currentModel = [];
+      currentSuggestion = null;
       currentQuery = query || currentQuery;
+      renderSurface();
+    },
+
+    // Offer a corrected term for a query that matched nothing as typed. Called
+    // by the core right after renderEmpty, so the empty surface is repainted
+    // with the prompt as its one actionable row.
+    renderDidYouMean(term) {
+      if (!term) return;
+      currentSuggestion = term;
       renderSurface();
     },
 
@@ -579,6 +617,7 @@ export default function createPaletteLayout(ctx) {
     renderError(query) {
       currentModel = [];
       currentFacetCounts = [];
+      currentSuggestion = null;
       currentQuery = query || currentQuery;
       flatItems = [];
       activeIndex = 0;
@@ -595,6 +634,7 @@ export default function createPaletteLayout(ctx) {
 
     renderResults(model, meta) {
       currentModel = Array.isArray(model) ? model : [];
+      currentSuggestion = null;
       if (meta) {
         if (typeof meta.query === 'string') currentQuery = meta.query;
         if (Array.isArray(meta.facetCounts)) currentFacetCounts = meta.facetCounts;
