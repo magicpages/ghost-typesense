@@ -228,6 +228,15 @@ import Typesense from 'typesense';
             this.selectedIndex = -1;
             this.searchDebounceTimeout = null;
 
+            // Resolves once the search surface is mounted and safe to show.
+            // openModal waits on this rather than on init() as a whole: init()
+            // finishes by applying the URL-driven initial state, which may
+            // itself open the modal, so waiting on init() there would have it
+            // wait on itself.
+            this.surfaceReady = new Promise(resolve => {
+                this.markSurfaceReady = resolve;
+            });
+
             // Monotonic id of the newest query. The did-you-mean retry resolves
             // after a second request, so it checks this before rendering — a
             // suggestion for a query the reader has already typed past must
@@ -398,6 +407,10 @@ import Typesense from 'typesense';
             // expose the promise so openModal can wait for the surface to be
             // ready before showing it.
             this.initReady = this.init();
+            // A failed mount must not leave openModal waiting for a surface that
+            // will never arrive. init() marks the surface ready itself on both
+            // paths; this only covers a throw before it gets there.
+            this.initReady.then(this.markSurfaceReady, this.markSurfaceReady);
             isInitialized = true;
         }
 
@@ -734,6 +747,9 @@ import Typesense from 'typesense';
                         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
                             this.activeLayout.setTheme(this.isDarkTheme());
                         });
+                        // The surface is mounted, so anything waiting to open it
+                        // may proceed — including handleInitialState below.
+                        this.markSurfaceReady();
                         await this.handleInitialState();
                         return;
                     } catch (err) {
@@ -754,6 +770,7 @@ import Typesense from 'typesense';
             this.updateTheme();
             this.initEventListeners();
             this.setupHashHandling();
+            this.markSurfaceReady();
             await this.handleInitialState();
         }
 
@@ -1089,12 +1106,11 @@ import Typesense from 'typesense';
         async openModal() {
             if (this.isModalOpen) return;
 
-            // The surface may still be initializing (an alternative layout
-            // lazily loads its chunk). Wait for it so we never open against a
-            // half-built widget.
-            if (this.initReady) {
-                try { await this.initReady; } catch { /* fall through to modal */ }
-            }
+            // The surface may still be mounting (an alternative layout lazily
+            // loads its chunk). Wait for it so we never open against a
+            // half-built widget. This settles even when init() failed, so a
+            // broken mount shows whatever surface exists rather than hanging.
+            await this.surfaceReady;
             if (this.isModalOpen) return;
 
             // Store active element for focus restoration
@@ -1134,11 +1150,7 @@ import Typesense from 'typesense';
             const searchParams = new URLSearchParams(window.location.search);
             const searchQuery = searchParams.get('s') || searchParams.get('q');
 
-            if (searchQuery) {
-                if (this.activeLayout) this.activeLayout.setQuery(searchQuery);
-                else if (this.searchInput) this.searchInput.value = searchQuery;
-                this.handleSearch(searchQuery);
-            }
+            this.applyUrlQuery(searchQuery);
         }
 
         closeModal() {
@@ -2227,6 +2239,20 @@ import Typesense from 'typesense';
             }
         }
 
+        // Put a query carried in the URL into whichever surface is mounted and
+        // run it. The modal owns an input; an alternative layout takes it
+        // through setQuery — which is why this cannot just write to
+        // `this.searchInput`, as it is null for palette and discovery.
+        applyUrlQuery(query) {
+            if (!query) return;
+
+            if (this.activeLayout) this.activeLayout.setQuery(query);
+            else if (this.searchInput) this.searchInput.value = query;
+            else return;
+
+            this.handleSearch(query);
+        }
+
         async handleInitialState() {
             // Check for search query parameters in the URL
             const searchParams = new URLSearchParams(window.location.search);
@@ -2243,17 +2269,12 @@ import Typesense from 'typesense';
             // Prioritize hash query over URL query
             if (hashQuery) {
                 await this.openModal();
-                if (this.searchInput) {
-                    this.searchInput.value = hashQuery;
-                    this.handleSearch(hashQuery);
-                }
-            } else if (searchQuery) {
-                await this.openModal();
-                if (this.searchInput) {
-                    this.searchInput.value = searchQuery;
-                    this.handleSearch(searchQuery);
-                }
-            } else if (window.location.hash === '#/search') {
+                // openModal reads `?s=`/`?q=` from the URL itself; the hash-path
+                // form is this branch's own to apply.
+                this.applyUrlQuery(hashQuery);
+            } else if (searchQuery || window.location.hash === '#/search') {
+                // No second call for `searchQuery`: opening already ran it, and
+                // repeating it here cost a duplicate request for the same query.
                 await this.openModal();
             }
         }
