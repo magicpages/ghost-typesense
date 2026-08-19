@@ -216,8 +216,7 @@ Use `typesenseSearchParams` to override any of the default Typesense search para
 | `sort_by` | `'_text_match:desc,published_at:desc'` | Sort by text match relevance, then by publication date |
 | `prefix` | `true` | Enable prefix matching (matches partial words as you type) |
 | `per_page` | `20` | Number of results per page |
-| `typo_tolerance` | `false` | Whether to allow typo corrections in search |
-| `num_typos` | `0` | Maximum number of typos to tolerate per word |
+| `num_typos` | `0` | Typos tolerated per word — `0` matches strictly, `1`–`2` are typical (see [Typo tolerance](#typo-tolerance)) |
 | `prioritize_exact_match` | `true` | Prioritize results with exact phrase matches |
 | `drop_tokens_threshold` | `0` | Token drop threshold for relaxing multi-word queries |
 | `enable_nested_fields` | `true` | Enable searching in nested fields (e.g., `tags.name`) |
@@ -239,14 +238,15 @@ typesenseSearchParams: {
 }
 ```
 
-**Enabling typo tolerance:**
+**Typo tolerance:**
 
 ```javascript
 typesenseSearchParams: {
-    typo_tolerance: true,
     num_typos: 2  // Allow up to 2 typos per word
 }
 ```
+
+`num_typos` is the only control — there is no separate on/off switch. See [Typo tolerance](#typo-tolerance) below for why the widget defaults to `0`.
 
 **Filtering results:**
 
@@ -264,7 +264,6 @@ window.__MP_SEARCH_CONFIG__ = {
     typesenseSearchParams: {
         sort_by: 'published_at:desc',
         per_page: 10,
-        typo_tolerance: true,
         num_typos: 1,
         filter_by: 'tags.slug:!=internal'
     }
@@ -272,6 +271,22 @@ window.__MP_SEARCH_CONFIG__ = {
 ```
 
 > **Note:** If you provide a custom `query_by` without a matching `query_by_weights`, the default weights are automatically removed to avoid mismatches. If you override `query_by`, you should also provide `query_by_weights`.
+
+### Typo tolerance
+
+The widget searches with `num_typos: 0`, which is **stricter than Typesense's own default of `2`**. That is deliberate: a query returns the posts that contain the words, not their near-neighbours, which is what makes results predictable — and a reader who does mistype gets the ["Did you mean …?" prompt](#spelling-correction) instead of a wrong answer dressed up as a right one.
+
+Raise it if you would rather absorb typos in the results themselves:
+
+```javascript
+typesenseSearchParams: {
+    num_typos: 2   // or 1 for something in between
+}
+```
+
+Typesense's related knobs — `min_len_1typo`, `min_len_2typo`, `typo_tokens_threshold` — pass through the same way.
+
+> **`typo_tolerance` is not a Typesense parameter.** Earlier versions of this widget sent it and this page documented it as the switch for typo correction; it was neither. Typesense ignores unknown parameters, so a config that set `typo_tolerance: true` and stopped there kept matching strictly, silently. It is now read as an alias for `num_typos: 2` (an explicit `num_typos` wins) and logs a deprecation notice to the browser console. Set `num_typos` directly.
 
 ## Search suggestions
 

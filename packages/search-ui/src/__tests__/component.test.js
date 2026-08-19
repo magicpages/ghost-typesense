@@ -1173,6 +1173,103 @@ describe('facet truncation', () => {
   });
 });
 
+// `typo_tolerance` is not a Typesense search parameter and never was. The widget
+// sent it and the README documented it as the switch for typo correction, so a
+// host who set it got nothing: Typesense ignores unknown parameters, `num_typos`
+// stayed 0, and no layer said a word about it.
+describe('typo_tolerance', () => {
+  // console.error, not warn: the shipped bundle strips console.warn, so that is
+  // the only channel a publisher would ever read this on.
+  let notice;
+  beforeEach(() => {
+    notice = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    notice.mockRestore();
+  });
+
+  it('is not sent to Typesense on a default query', () => {
+    expect(mountWithConfig().getSearchParameters()).not.toHaveProperty('typo_tolerance');
+  });
+
+  it('is not forwarded when a host sets it', () => {
+    const params = mountWithConfig({
+      typesenseSearchParams: { typo_tolerance: true }
+    }).getSearchParameters();
+
+    expect(params).not.toHaveProperty('typo_tolerance');
+  });
+
+  it('reads a host-set true as the typo tolerance its author meant', () => {
+    const params = mountWithConfig({
+      typesenseSearchParams: { typo_tolerance: true }
+    }).getSearchParameters();
+
+    expect(params.num_typos).toBe(2);
+  });
+
+  it('lets an explicit num_typos win over the alias', () => {
+    const params = mountWithConfig({
+      typesenseSearchParams: { typo_tolerance: true, num_typos: 1 }
+    }).getSearchParameters();
+
+    expect(params.num_typos).toBe(1);
+  });
+
+  it('leaves matching strict for a host-set false', () => {
+    const params = mountWithConfig({
+      typesenseSearchParams: { typo_tolerance: false }
+    }).getSearchParameters();
+
+    expect(params.num_typos).toBe(0);
+    expect(params).not.toHaveProperty('typo_tolerance');
+  });
+
+  it('says so in the console, once, rather than failing silently', () => {
+    const el = mountWithConfig({ typesenseSearchParams: { typo_tolerance: true } });
+
+    el.getSearchParameters();
+    el.getSearchParameters();
+
+    // getSearchParameters runs on every keystroke; the message has to be
+    // findable, not buried under copies of itself.
+    expect(notice).toHaveBeenCalledTimes(1);
+    expect(notice.mock.calls[0][0]).toContain('num_typos');
+  });
+
+  it('stays quiet for a config that never mentions it', () => {
+    mountWithConfig({ typesenseSearchParams: { num_typos: 2 } }).getSearchParameters();
+    expect(notice).not.toHaveBeenCalled();
+  });
+
+  it('keeps num_typos: 0 as the widget default — stricter than Typesense own 2', () => {
+    expect(mountWithConfig().getSearchParameters().num_typos).toBe(0);
+  });
+
+  it('does not send it on the did-you-mean retry either', async () => {
+    const calls = [];
+    const el = mountWithConfig();
+    el.typesenseClient = {
+      collections: () => ({
+        documents: () => ({
+          search: async (params) => {
+            calls.push(params);
+            return { found: 0, hits: [] };
+          }
+        })
+      })
+    };
+
+    await el.handleSearch('compsting');
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].num_typos).toBe(2);
+    for (const params of calls) {
+      expect(params).not.toHaveProperty('typo_tolerance');
+    }
+  });
+});
+
 // `searchAuthors` and `typesenseSearchParams.query_by` both decide what a query
 // searches. The option used to edit the defaults, which a host's query_by
 // replaces wholesale — so it did nothing for exactly the hosts who had tuned
