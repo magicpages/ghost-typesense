@@ -320,11 +320,17 @@ export class GhostTypesenseManager {
     try {
       response = await posts.fetch();
     } catch (fetchError: any) {
-      // Network or connection error
+      // Network or connection error. The original is attached as `cause` so the
+      // stack that actually failed survives the friendlier message.
       if (fetchError.code === 'ECONNREFUSED') {
-        throw new Error(`Cannot connect to Ghost at ${this.config.ghost.url} - is Ghost running?`);
+        throw new Error(
+          `Cannot connect to Ghost at ${this.config.ghost.url} - is Ghost running?`,
+          { cause: fetchError }
+        );
       }
-      throw new Error(`Failed to connect to Ghost: ${fetchError.message || fetchError}`);
+      throw new Error(`Failed to connect to Ghost: ${fetchError.message || fetchError}`, {
+        cause: fetchError
+      });
     }
     
     if (!response.success) {

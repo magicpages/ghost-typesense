@@ -19,7 +19,7 @@
     "build": "tsup src/index.ts --format esm --dts",
     "clean": "rimraf dist",
     "dev": "tsup src/index.ts --format esm --dts --watch",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
