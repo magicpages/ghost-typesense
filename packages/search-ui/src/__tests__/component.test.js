@@ -1269,3 +1269,94 @@ describe('typo_tolerance', () => {
     }
   });
 });
+
+// `searchAuthors` and `typesenseSearchParams.query_by` both decide what a query
+// searches. The option used to edit the defaults, which a host's query_by
+// replaces wholesale — so it did nothing for exactly the hosts who had tuned
+// their query, and said nothing about it.
+describe('searchAuthors', () => {
+  const fieldsOf = (params) => params.query_by.split(',');
+
+  it('searches author names on the default query', () => {
+    const params = mountWithConfig({ searchAuthors: true }).getSearchParameters();
+    expect(fieldsOf(params)).toContain('authors');
+  });
+
+  it('searches them alongside a host-supplied query_by', () => {
+    const params = mountWithConfig({
+      searchAuthors: true,
+      typesenseSearchParams: { query_by: 'title,plaintext,excerpt' }
+    }).getSearchParameters();
+
+    expect(fieldsOf(params)).toEqual(['title', 'plaintext', 'excerpt', 'authors']);
+  });
+
+  it('keeps query_by_weights the same length as query_by', () => {
+    // Typesense rejects the search outright when the two lists differ, so a
+    // field added without its weight is worse than no field at all.
+    const params = mountWithConfig({
+      searchAuthors: true,
+      typesenseSearchParams: { query_by: 'title,plaintext', query_by_weights: '5,2' }
+    }).getSearchParameters();
+
+    expect(params.query_by).toBe('title,plaintext,authors');
+    expect(params.query_by_weights).toBe('5,2,1');
+  });
+
+  it('leaves weights unset when the host set none, so fields stay equally weighted', () => {
+    const params = mountWithConfig({
+      searchAuthors: true,
+      typesenseSearchParams: { query_by: 'title,plaintext' }
+    }).getSearchParameters();
+
+    expect(params.query_by).toBe('title,plaintext,authors');
+    expect(params.query_by_weights).toBeUndefined();
+  });
+
+  it('weights the default query the same way it always did', () => {
+    const params = mountWithConfig({ searchAuthors: true }).getSearchParameters();
+    const weights = params.query_by_weights.split(',');
+
+    expect(weights).toHaveLength(fieldsOf(params).length);
+    expect(weights.at(-1)).toBe('1');
+  });
+
+  it('adds nothing when the host already searches authors', () => {
+    const params = mountWithConfig({
+      searchAuthors: true,
+      typesenseSearchParams: { query_by: 'title,authors', query_by_weights: '5,3' }
+    }).getSearchParameters();
+
+    expect(params.query_by).toBe('title,authors');
+    // Its weight is the publisher's, not the one this option would have used.
+    expect(params.query_by_weights).toBe('5,3');
+  });
+
+  it('adds nothing when a publisher put authors in searchFields themselves', () => {
+    const params = mountWithConfig({
+      searchAuthors: true,
+      searchFields: { title: { weight: 5 }, authors: { weight: 4 } }
+    }).getSearchParameters();
+
+    expect(fieldsOf(params)).toEqual(['title', 'authors']);
+    expect(params.query_by_weights).toBe('5,4');
+  });
+
+  it('stays off unless asked for, whether or not query_by is set', () => {
+    expect(fieldsOf(mountWithConfig().getSearchParameters())).not.toContain('authors');
+    expect(fieldsOf(mountWithConfig({
+      typesenseSearchParams: { query_by: 'title,plaintext' }
+    }).getSearchParameters())).not.toContain('authors');
+  });
+
+  it('composes with semantic search, keeping both lists aligned', () => {
+    const params = mountWithConfig({
+      searchAuthors: true,
+      semanticSearch: true,
+      typesenseSearchParams: { query_by: 'title', query_by_weights: '5' }
+    }).getSearchParameters();
+
+    expect(fieldsOf(params)).toEqual(['title', 'authors', 'embedding']);
+    expect(params.query_by_weights).toBe('5,1,1');
+  });
+});

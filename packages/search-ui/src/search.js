@@ -1574,6 +1574,37 @@ import Typesense from 'typesense';
             this.didYouMeanState.classList.remove(`${CSS_PREFIX}-hidden`);
         }
 
+        // Add a field to what a query searches, keeping `query_by_weights` the
+        // same length as `query_by`. That pairing is not cosmetic: Typesense
+        // rejects a search outright when the two lists differ, so a field added
+        // without its weight would turn a ranking tweak into a failed request.
+        // Weights are left alone when unset — Typesense then weights every field
+        // equally, and a partial list would be worse than none. Returns whether
+        // the field was added, which is false when it was already searched.
+        addQueryField(params, field, weight = 1) {
+            if (!field) return false;
+
+            const fields = String(params.query_by || '')
+                .split(',')
+                .map(f => f.trim())
+                .filter(Boolean);
+            if (fields.includes(field)) return false;
+
+            fields.push(field);
+            params.query_by = fields.join(',');
+
+            if (params.query_by_weights) {
+                const weights = String(params.query_by_weights)
+                    .split(',')
+                    .map(w => w.trim())
+                    .filter(Boolean);
+                weights.push(String(weight));
+                params.query_by_weights = weights.join(',');
+            }
+
+            return true;
+        }
+
         getSearchParameters() {
             const fields = Object.keys(this.config.searchFields || {}).length > 0
                 ? this.config.searchFields
@@ -1596,16 +1627,6 @@ import Typesense from 'typesense';
                     highlightFields.push(field);
                 }
             });
-
-            // Opt-in: make author names matchable by keyword. Off by default
-            // (matching the historical behaviour where typing an author name
-            // found nothing); set config.searchAuthors = true to include the
-            // `authors` field in query_by at a low weight. Publishers can also
-            // add `authors` to searchFields directly for full control.
-            if (this.config.searchAuthors && !searchFields.includes('authors')) {
-                searchFields.push('authors');
-                weights.push(1);
-            }
 
             // Default search parameters
             const defaultParams = {
@@ -1660,6 +1681,18 @@ import Typesense from 'typesense';
                     + 'nothing on its own. Reading it as `num_typos: 2` for now; set `num_typos` '
                     + 'directly instead (0 matches strictly, 1–2 tolerate typos).'
                 );
+            }
+
+            // Opt-in: make author names matchable by keyword. Off by default
+            // (matching the historical behaviour where typing an author name
+            // found nothing). Applied to the merged params rather than the
+            // defaults, because a host-supplied `query_by` replaces the default
+            // one wholesale — appending to the defaults meant the option did
+            // nothing for exactly that host who had tuned their query. Publishers
+            // can still put `authors` in searchFields (or their own query_by) for
+            // full control over its weight; this is a no-op when it is there.
+            if (this.config.searchAuthors) {
+                this.addQueryField(mergedParams, 'authors');
             }
 
             // Click analytics needs each hit's `id` in the response. A host
@@ -1730,27 +1763,7 @@ import Typesense from 'typesense';
             // When disabled, queries stay purely lexical.
             if (this.config.semanticSearch) {
                 const embeddingField = this.config.embeddingFieldName || 'embedding';
-                const queryFields = String(mergedParams.query_by || '')
-                    .split(',')
-                    .map(f => f.trim())
-                    .filter(Boolean);
-                if (!queryFields.includes(embeddingField)) {
-                    queryFields.push(embeddingField);
-                    mergedParams.query_by = queryFields.join(',');
-
-                    // Typesense requires query_by_weights to have the same number
-                    // of entries as query_by when it is set, so add a weight for
-                    // the embedding field too. (When no weights are set, leaving
-                    // it unset is valid — Typesense weights fields equally.)
-                    if (mergedParams.query_by_weights) {
-                        const weights = String(mergedParams.query_by_weights)
-                            .split(',')
-                            .map(w => w.trim())
-                            .filter(Boolean);
-                        weights.push('1');
-                        mergedParams.query_by_weights = weights.join(',');
-                    }
-
+                if (this.addQueryField(mergedParams, embeddingField)) {
                     // Bias hybrid ranking toward keyword matches so a strong
                     // textual hit (e.g. an author name) outranks merely
                     // vector-near posts, and drop far semantic-only matches.
