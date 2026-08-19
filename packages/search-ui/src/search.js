@@ -130,6 +130,10 @@ import Typesense from 'typesense';
     // `connectionTimeoutSeconds`.
     const DEFAULT_CONNECTION_TIMEOUT_SECONDS = 5;
 
+    // What the deprecated `typo_tolerance: true` alias maps to. Typesense's own
+    // default, which is what a host asking for "typo tolerance" is describing.
+    const DEFAULT_TYPO_TOLERANT_NUM_TYPOS = 2;
+
     // Spelling correction ("did you mean"). The retry that produces it asks for
     // two typos per word — Typesense's own maximum — because the first, strict
     // request already established that nothing matches as typed.
@@ -1209,6 +1213,21 @@ import Typesense from 'typesense';
             return this.typesenseClient;
         }
 
+        // Tell the site owner about a config problem, once per key.
+        // getSearchParameters runs on every keystroke, so an unconditional
+        // message would fill the console and bury what it is trying to say.
+        //
+        // console.error, not console.warn: the production bundle strips warn
+        // (see the terser `drop_console` list in rollup.config.js), so a warning
+        // here would exist in the source and nowhere a publisher could ever read
+        // it — which is the same silence this message exists to break.
+        logConfigIssueOnce(key, message) {
+            if (!this.reportedConfigIssues) this.reportedConfigIssues = new Set();
+            if (this.reportedConfigIssues.has(key)) return;
+            this.reportedConfigIssues.add(key);
+            console.error(message);
+        }
+
         // A search request that never completed — timeout, offline, unreachable
         // host. Logged so a failing connection is diagnosable from the reader's
         // console (typesense-js logs its own retry warnings; this identifies the
@@ -1457,9 +1476,6 @@ import Typesense from 'typesense';
                     .search({
                         ...searchParams,
                         q: query,
-                        // The defaults switch typo tolerance off both ways, so
-                        // the retry has to lift both.
-                        typo_tolerance: true,
                         num_typos: DID_YOU_MEAN_NUM_TYPOS
                     });
             } catch (error) {
@@ -1598,7 +1614,10 @@ import Typesense from 'typesense';
                 highlight_full_fields: highlightFields.join(','),
                 highlight_affix_num_tokens: 30,
                 include_fields: 'id,title,url,excerpt,plaintext,published_at,tags,authors,feature_image,visibility',
-                typo_tolerance: false,
+                // Stricter than Typesense's own default of 2: a query returns
+                // the posts that contain the words, not their near-neighbours,
+                // which keeps results predictable. `enableDidYouMean` covers the
+                // misspelling case by retrying once and offering the correction.
                 num_typos: 0,
                 prefix: true,
                 per_page: 20,
@@ -1622,6 +1641,26 @@ import Typesense from 'typesense';
                 ...defaultParams,
                 ...customParams
             };
+
+            // `typo_tolerance` is not a Typesense search parameter — it never
+            // was. The widget used to send it and the README documented it as
+            // the switch for typo correction, so a host who set it got nothing:
+            // Typesense ignores unknown parameters, `num_typos` stayed 0, and
+            // nothing anywhere said so. It is read here as the alias its authors
+            // meant it to be (and never forwarded), so those configs start
+            // behaving as intended. An explicit `num_typos` always wins.
+            if (Object.prototype.hasOwnProperty.call(customParams, 'typo_tolerance')) {
+                delete mergedParams.typo_tolerance;
+                if (customParams.typo_tolerance && customParams.num_typos === undefined) {
+                    mergedParams.num_typos = DEFAULT_TYPO_TOLERANT_NUM_TYPOS;
+                }
+                this.logConfigIssueOnce(
+                    'typo_tolerance',
+                    'MagicPagesSearch: `typo_tolerance` is not a Typesense search parameter and does '
+                    + 'nothing on its own. Reading it as `num_typos: 2` for now; set `num_typos` '
+                    + 'directly instead (0 matches strictly, 1–2 tolerate typos).'
+                );
+            }
 
             // Click analytics needs each hit's `id` in the response. A host
             // that overrides `include_fields` may legitimately omit it, so
