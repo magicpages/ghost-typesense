@@ -10,3 +10,23 @@ globalThis.BUNDLED_CSS = '';
 // only when a global config (or a search hash/param) is present. Tests
 // construct their own elements with explicit config, so leave this unset.
 delete globalThis.__MP_SEARCH_CONFIG__;
+
+// jsdom implements neither of these, and both are reached by ordinary widget
+// code: matchMedia backs the system-theme detection wired up in
+// initEventListeners, and scrollIntoView keeps the active row visible in the
+// palette. Neither has anything to observe in a headless DOM, so a no-op stub
+// is the accurate stand-in.
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = () => ({
+    matches: false,
+    media: '',
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {}
+  });
+}
+
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

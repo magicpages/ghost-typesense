@@ -704,6 +704,41 @@
     font-size: calc(0.875 * var(--mp-rem));
 }
 
+/* "Did you mean …" prompt. Sits under the empty state's message, because that
+   is the moment it matters: the reader is looking at zero results and this is
+   the one route forward. */
+.mp-search-did-you-mean {
+    margin-top: calc(1 * var(--mp-rem));
+}
+
+.mp-search-did-you-mean-btn {
+    font: inherit;
+    font-size: calc(0.9375 * var(--mp-rem));
+    color: var(--color-text);
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    padding: calc(0.4375 * var(--mp-rem)) calc(1 * var(--mp-rem));
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.mp-search-did-you-mean-btn:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--accent-color);
+}
+
+.mp-search-did-you-mean-btn:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.mp-search-did-you-mean-term {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
 /* Close button */
 .mp-search-close {
     position: fixed;

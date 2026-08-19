@@ -542,14 +542,46 @@
 .mp-search-discovery-empty,
 .mp-search-discovery-preview-empty {
   display: flex;
+  /* Column, so the zero-results message can be joined by the "did you mean"
+     prompt underneath it rather than beside it. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: calc(0.875 * var(--mp-rem));
   height: 100%;
   min-height: calc(6 * var(--mp-rem));
   padding: calc(2 * var(--mp-rem));
   text-align: center;
   color: var(--color-text-secondary);
   font-size: calc(0.9375 * var(--mp-rem));
+}
+
+/* "Did you mean …" — the one route forward out of the empty state. */
+.mp-search-discovery-suggest {
+  font: inherit;
+  font-size: calc(0.9375 * var(--mp-rem));
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  padding: calc(0.4375 * var(--mp-rem)) calc(1 * var(--mp-rem));
+  cursor: pointer;
+  transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.mp-search-discovery-suggest:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--accent-color);
+}
+
+.mp-search-discovery-suggest:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.mp-search-discovery-suggest strong {
+  color: var(--accent-color);
+  font-weight: 600;
 }
 
 /* Initial state (before any query) and the notice state (a failed request):

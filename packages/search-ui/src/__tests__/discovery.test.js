@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import createDiscoveryLayout from '../layouts/discovery.js';
 
 // Hosts mounted during a test, torn down afterwards so DOM fixtures never leak
@@ -23,21 +23,25 @@ function makeCtx() {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;'),
-    t: (k) => k
+    // Echoing the key is enough for most assertions. didYouMeanLabel carries a
+    // {q} placeholder the layout has to substitute, so it needs a real template.
+    t: (k) => (k === 'didYouMeanLabel' ? 'Did you mean {q}?' : k),
+    search: vi.fn()
   };
 }
 
 // Mount the layout into a real shadow root (so getElementById works the same as
 // in the live widget) and return the layout plus its cached preview element.
 function mountDiscovery() {
-  const layout = createDiscoveryLayout(makeCtx());
+  const ctx = makeCtx();
+  const layout = createDiscoveryLayout(ctx);
   const host = document.createElement('div');
   document.body.appendChild(host);
   mountedHosts.push(host);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = layout.buildMarkup();
   layout.cacheElements(shadow);
-  return { layout, shadow };
+  return { layout, shadow, ctx };
 }
 
 function modelWith(featureImage) {
@@ -117,5 +121,125 @@ describe('discovery preview hero', () => {
     const img = preview.querySelector('img.mp-search-discovery-hero');
     expect(img).not.toBeNull();
     expect(img.getAttribute('src')).toBe('https://cdn.example.com/p.jpg');
+  });
+});
+
+describe('discovery did-you-mean prompt', () => {
+  it('adds the correction under the no-results message, keeping both on screen', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const empty = shadow.querySelector('.mp-search-discovery-empty');
+    expect(empty.textContent).toContain('noResultsMessage');
+    const button = empty.querySelector('.mp-search-discovery-suggest');
+    expect(button.dataset.search).toBe('composting');
+    expect(button.textContent).toBe('Did you mean composting?');
+  });
+
+  it('escapes a suggested term rather than letting it into the markup', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('x');
+    layout.renderDidYouMean('"><img src=x onerror=alert(1)>');
+
+    const empty = shadow.querySelector('.mp-search-discovery-empty');
+    expect(empty.querySelector('img')).toBeNull();
+  });
+
+  it('adds nothing when the surface is not the empty state (a failed request)', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderError('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(shadow.querySelector('.mp-search-discovery-suggest')).toBeNull();
+  });
+
+  it('runs the corrected term and puts it in the input when clicked', () => {
+    const { layout, shadow, ctx } = mountDiscovery();
+    layout.bindEvents();
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    shadow.querySelector('.mp-search-discovery-suggest').click();
+
+    expect(ctx.search).toHaveBeenCalledWith('composting');
+    expect(shadow.querySelector('.mp-search-discovery-input').value).toBe('composting');
+  });
+});
+
+// A listbox is a set of options. The container only carries that role while it
+// holds result cards — the prompt, the zero-results message with its button, and
+// the failure alert are prose and controls, which assistive tech may skip or
+// mis-announce as malformed options inside a listbox.
+describe('discovery listbox role', () => {
+  const roleOf = (shadow) =>
+    shadow.getElementById('mp-search-discovery-results').getAttribute('role');
+
+  it('carries the listbox role while results are on screen', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    expect(roleOf(shadow)).toBe('listbox');
+  });
+
+  it('drops it for the empty state, so the suggestion button is not a listbox child', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(roleOf(shadow)).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-suggest')).not.toBeNull();
+  });
+
+  it('drops it for the initial and failure surfaces too', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderError('composting');
+    expect(roleOf(shadow)).toBeNull();
+
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderInitial();
+    expect(roleOf(shadow)).toBeNull();
+  });
+
+  it('restores it once results render again', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('compsting');
+    layout.renderResults(modelWith(null), { found: 1 });
+    expect(roleOf(shadow)).toBe('listbox');
+  });
+});
+
+describe('discovery did-you-mean label contract', () => {
+  function mountWithLabel(label) {
+    const ctx = makeCtx();
+    ctx.t = (k) => (k === 'didYouMeanLabel' ? label : k);
+    const layout = createDiscoveryLayout(ctx);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountedHosts.push(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = layout.buildMarkup();
+    layout.cacheElements(shadow);
+    return { layout, shadow };
+  }
+
+  it('substitutes {q} in a translated label', () => {
+    const { layout, shadow } = mountWithLabel('Meintest du {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(shadow.querySelector('.mp-search-discovery-suggest').textContent)
+      .toBe('Meintest du composting?');
+  });
+
+  it('renders a label containing markup as text, never as markup', () => {
+    const { layout, shadow } = mountWithLabel('<img src=x onerror=alert(1)> {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const button = shadow.querySelector('.mp-search-discovery-suggest');
+    expect(button.querySelector('img')).toBeNull();
+    expect(button.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 });

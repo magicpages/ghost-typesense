@@ -63,6 +63,31 @@ export default function createDiscoveryLayout(ctx) {
       + `<span aria-hidden="true">🔒</span> ${esc(ctx.t('membersLabel'))}</span>`;
   }
 
+  // The spelling-correction prompt offered under the empty message. Both halves
+  // are text: the term comes from the index (see the core's didYouMeanFromHits)
+  // and the label from the site's translations, so each is escaped and only the
+  // wrapper around the term is markup.
+  function didYouMeanHtml(term) {
+    const safe = esc(term);
+    const label = ctx
+      .t('didYouMeanLabel')
+      .split('{q}')
+      .map((part) => esc(part))
+      .join(`<strong>${safe}</strong>`);
+    return `<button type="button" class="${P}-discovery-suggest" data-search="${safe}">${label}</button>`;
+  }
+
+  // A listbox is a set of options, so the container only carries that role
+  // while it actually holds result cards. The other surfaces it renders —
+  // the initial prompt, the zero-results message with its "did you mean"
+  // button, the failure alert — are prose and controls, which assistive tech
+  // may skip or mis-announce as malformed options inside a listbox.
+  function setListboxRole(isListbox) {
+    if (!refs.results) return;
+    if (isListbox) refs.results.setAttribute('role', 'listbox');
+    else refs.results.removeAttribute('role');
+  }
+
   // Panel display state. 'initial' (before any query) and 'notice' (a failed
   // request) both collapse the three-pane grid to a single centred column,
   // because neither has facets or a preview to show; null restores the grid.
@@ -346,6 +371,20 @@ export default function createDiscoveryLayout(ctx) {
           const idx = Number(card.dataset.index);
           if (!Number.isNaN(idx)) selectIndex(idx, { scroll: false });
         });
+
+        // "Did you mean …": run the corrected term as if it had been typed.
+        refs.results.addEventListener('click', (e) => {
+          const suggest = e.target.closest(`.${P}-discovery-suggest`);
+          if (!suggest) return;
+          e.preventDefault();
+          const term = suggest.dataset.search;
+          if (!term) return;
+          if (refs.input) {
+            refs.input.value = term;
+            refs.input.focus();
+          }
+          ctx.search(term);
+        });
       }
 
       // Preview "Read post" link analytics (capture, before navigation).
@@ -422,6 +461,7 @@ export default function createDiscoveryLayout(ctx) {
       model = [];
       selectedIndex = -1;
       setPanelState('initial');
+      setListboxRole(false);
       if (refs.results) {
         refs.results.innerHTML =
           `<div class="${P}-discovery-prompt">`
@@ -450,6 +490,7 @@ export default function createDiscoveryLayout(ctx) {
       model = [];
       selectedIndex = -1;
       setPanelState(null);
+      setListboxRole(false);
       const q = (query || '').trim();
       if (refs.results) {
         refs.results.innerHTML = `<div class="${P}-discovery-empty">${esc(ctx.t('noResultsMessage'))}</div>`;
@@ -461,6 +502,17 @@ export default function createDiscoveryLayout(ctx) {
       if (refs.count) refs.count.textContent = q ? `0 ${ctx.t('resultsLabel')}` : '';
     },
 
+    // Offer a corrected term for a query that matched nothing as typed. Called
+    // by the core right after renderEmpty, so it adds to that message rather
+    // than replacing it — the empty state stands on its own if the retry finds
+    // nothing to suggest.
+    renderDidYouMean(term) {
+      if (!refs.results || !term) return;
+      const empty = refs.results.querySelector(`.${P}-discovery-empty`);
+      if (!empty) return;
+      empty.insertAdjacentHTML('beforeend', didYouMeanHtml(term));
+    },
+
     // The request failed (timeout, offline, unreachable host). Distinct from
     // renderEmpty: it fills the surface with an alert rather than reporting zero
     // results, and clears the rail/preview/count so nothing stale remains.
@@ -468,6 +520,7 @@ export default function createDiscoveryLayout(ctx) {
       model = [];
       selectedIndex = -1;
       setPanelState('notice');
+      setListboxRole(false);
       if (refs.results) {
         refs.results.innerHTML =
           `<div class="${P}-discovery-prompt" role="alert">`
@@ -489,6 +542,7 @@ export default function createDiscoveryLayout(ctx) {
     renderResults(nextModel, meta) {
       if (!refs.results) return;
       setPanelState(null);
+      setListboxRole(true);
 
       // Preserve the selected post (by id) across the re-render where possible;
       // otherwise default to the first hit.

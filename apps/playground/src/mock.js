@@ -1,8 +1,9 @@
 // A small fake Ghost dataset and a minimal Typesense-shaped search responder,
 // so the playground demonstrates the widget offline. This is intentionally not
 // a Typesense reimplementation — it honours just enough (`q` substring match,
-// `filter_by` facet equality, `facet_by` counts, basic highlighting) to make
-// the search, suggestions, facet, and grid features visible.
+// `filter_by` facet equality, `facet_by` counts, basic highlighting, and
+// `num_typos` word matching) to make the search, suggestions, facet, grid, and
+// did-you-mean features visible.
 
 export const POSTS = [
   {
@@ -109,12 +110,68 @@ function matchesFilters(post, filters) {
   });
 }
 
-function highlight(text, q) {
-  if (!q) return { snippet: text };
+// Word-level matching, mirroring the two things the widget relies on: prefix
+// matching (`prefix: true`) and a per-word typo budget (`num_typos`). The typo
+// side is only ever reached when the widget asks for it, which is what makes
+// the did-you-mean retry demonstrable offline: the strict first request finds
+// nothing, the lenient second one matches. `queryWord` comes in lowercased
+// (see queryWords); the document's own casing is preserved for the caller.
+function wordMatches(docWord, queryWord, budget) {
+  const word = docWord.toLowerCase();
+  if (word.startsWith(queryWord)) return true;
+  if (budget <= 0 || Math.abs(word.length - queryWord.length) > budget) return false;
+
+  // Levenshtein distance, abandoned once it is known to exceed the budget.
+  let previous = Array.from({ length: word.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= queryWord.length; i++) {
+    const current = [i];
+    let rowMin = i;
+    for (let j = 1; j <= word.length; j++) {
+      const cost = queryWord[i - 1] === word[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+      if (current[j] < rowMin) rowMin = current[j];
+    }
+    if (rowMin > budget) return false;
+    previous = current;
+  }
+  return previous[word.length] <= budget;
+}
+
+function words(text) {
+  return String(text).match(/[\p{L}\p{N}']+/gu) || [];
+}
+
+function queryWords(q) {
+  return q.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+// Every query word has to match some word in the text — the mock's stand-in for
+// a typo-tolerant match, used only when the widget asked for one.
+function matchesWithTypos(text, q, budget) {
+  const docWords = words(text);
+  return queryWords(q).every((queryWord) =>
+    docWords.some((docWord) => wordMatches(docWord, queryWord, budget))
+  );
+}
+
+// The document's own words that the query matched. The widget reads these as
+// `matched_tokens` — they are where a "did you mean" correction comes from, so
+// they carry the document's spelling rather than the reader's.
+function matchedTokens(text, q, budget) {
+  if (!q) return [];
+  const qWords = queryWords(q);
+  return words(text).filter((docWord) =>
+    qWords.some((queryWord) => wordMatches(docWord, queryWord, budget))
+  );
+}
+
+function highlight(text, q, budget) {
+  const matched_tokens = matchedTokens(text, q, budget);
+  if (!q) return { snippet: text, matched_tokens };
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return { snippet: text };
+  if (idx === -1) return { snippet: text, matched_tokens };
   const snippet = `${text.slice(0, idx)}<mark>${text.slice(idx, idx + q.length)}</mark>${text.slice(idx + q.length)}`;
-  return { snippet };
+  return { snippet, matched_tokens };
 }
 
 // The indexed representation of a post, mirroring what packages/core writes to
@@ -134,6 +191,8 @@ function toIndexedDoc(post) {
 
 export function mockSearchResponse(params = {}) {
   const q = (params.q || '').trim();
+  // Arrives as a query-string value, so it is a string on the wire.
+  const numTypos = Number(params.num_typos) || 0;
   const filters = parseFilterBy(params.filter_by);
   const facetBy = (params.facet_by || '').split(',').map((f) => f.trim()).filter(Boolean);
 
@@ -152,15 +211,18 @@ export function mockSearchResponse(params = {}) {
     if (!q || q === '*') return true;
     const fieldsText = [p.title, p.excerpt, p.plaintext, p.tags.join(' ')];
     if (includeAuthors) fieldsText.push((p.authors || []).join(' '));
-    const haystack = fieldsText.join(' ').toLowerCase();
-    return haystack.includes(q.toLowerCase());
+    const haystack = fieldsText.join(' ');
+    if (haystack.toLowerCase().includes(q.toLowerCase())) return true;
+    // Only when the widget asked for typo tolerance, so the strict default
+    // keeps matching exactly as before.
+    return numTypos > 0 && matchesWithTypos(haystack, q, numTypos);
   });
 
   const hits = filtered.map((document) => ({
     document,
     highlight: {
-      title: highlight(document.title, q),
-      excerpt: highlight(document.excerpt, q)
+      title: highlight(document.title, q, numTypos),
+      excerpt: highlight(document.excerpt, q, numTypos)
     }
   }));
 

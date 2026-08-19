@@ -16,6 +16,7 @@ A beautiful, accessible search interface for Ghost blogs using Typesense. This p
 - 🔎 Smart context-aware search result highlighting
 - 📝 Plaintext content search for improved relevance
 - 💡 Exact phrase matching support
+- 🪄 "Did you mean …?" spelling correction on a query that matched nothing
 - 🔍 Contextual excerpts that show search term in context
 - 🧩 Support for nested fields
 - 🛡️ **Style encapsulation with Web Components** - Uses Shadow DOM to prevent Ghost theme styles from interfering with the search UI
@@ -82,6 +83,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `collectionName` | `String` | Yes | — | Name of your Typesense collection |
 | `theme` | `String` | No | `'system'` | UI theme: `'light'`, `'dark'`, or `'system'` (respects OS preference) |
 | `enableHighlighting` | `Boolean` | No | `true` | Whether to highlight search terms in results |
+| `enableDidYouMean` | `Boolean` | No | `true` | Offer a corrected term when a query matches nothing (see [Spelling correction](#spelling-correction)) |
 | `commonSearches` | `Array` | No | `[]` | Static fallback list of suggested search terms (see [Search suggestions](#search-suggestions)) |
 | `pinnedSearches` | `Array` | No | `[]` | Publisher-curated terms, always shown first (see [Search suggestions](#search-suggestions)) |
 | `suggestionsUrl` | `String` | No | — | URL fetched on modal open for dynamic suggestions (see [Search suggestions](#search-suggestions)) |
@@ -121,6 +123,33 @@ window.__MP_SEARCH_CONFIG__ = {
 All three must be numbers; a non-numeric or out-of-range value is ignored in favour of the default, so a typo can't disable retries or set a zero-second timeout.
 
 When a request does fail, readers see a distinct "Search is temporarily unavailable" panel rather than the no-results message — a failed request is never reported as an empty archive. The error is also logged to the browser console (`MagicPagesSearch: search request failed`), which is the quickest way to tell a connection problem from a genuinely empty result set. Both strings are translatable (`errorMessage`, `errorHint`).
+
+### Spelling correction
+
+Search matches strictly by default (`num_typos: 0`), which is what keeps results predictable — a query returns the posts that contain the words, not their near-neighbours. The cost is that a mistyped word matches nothing at all.
+
+`enableDidYouMean` covers that case. When a query returns zero results, the widget re-runs it once with typo tolerance raised (`num_typos: 2`). If that finds posts, the reader is offered the corrected term:
+
+> No results found for your search
+>
+> **Did you mean _composting_?**
+
+Picking it runs the corrected search. Clicking works everywhere; in the palette layout the prompt is also a row, so `↵` accepts it.
+
+The suggested word comes from the `matched_tokens` the retry returned, so it is always a word your posts actually contain — never a guess from a dictionary that doesn't know your archive. Words are only replaced within the typo budget Typesense itself would allow for their length (nothing under four characters, one typo up to six, two beyond), and a query whose words are all in the index is left alone rather than being offered back unchanged.
+
+The retry is skipped entirely when your `typesenseSearchParams` already sets a non-zero `num_typos` — you are searching leniently already, so the first request was the lenient one. So strict-matching sites pay one extra request, and only on a genuine miss; lenient ones pay none. If the retry fails or finds nothing, the reader simply keeps the ordinary empty state.
+
+Turn it off with:
+
+```javascript
+window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    enableDidYouMean: false
+};
+```
+
+The prompt's wording is translatable via `didYouMeanLabel`, where `{q}` marks where the suggested term goes (see [Internationalization](#internationalization-i18n)). The string is rendered as text — markup in a translation shows up literally rather than being parsed.
 
 ### Search Fields Configuration
 
@@ -530,6 +559,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `emptyStateMessage` | "Start typing to search..." | Message shown when search is empty |
 | `loadingMessage` | "Searching..." | Message shown while searching |
 | `noResultsMessage` | "No results found for your search" | Message when a query genuinely matched nothing |
+| `didYouMeanLabel` | "Did you mean {q}?" | Spelling-correction prompt under the empty state (`{q}` is the suggested term) |
 | `errorMessage` | "Search is temporarily unavailable" | Heading shown when the search request itself failed (timeout, offline, unreachable host) |
 | `errorHint` | "Check your connection and try again." | Second line of that failure state |
 | `navigateHint` | "to navigate" | Keyboard hint for navigation |

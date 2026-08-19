@@ -607,3 +607,378 @@ describe('highlight snippet selection', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });
+
+// enableDidYouMean. The widget matches strictly (num_typos: 0) so results stay
+// predictable, which leaves a mistyped query with nowhere to go. One typo-
+// tolerant retry on a genuine miss turns that dead end into an offer.
+describe('did you mean', () => {
+  const HIDDEN = 'mp-search-hidden';
+
+  const hit = (title) => ({
+    document: { id: 'p1', title, url: 'https://x/p/', excerpt: 'e', published_at: 1700000000000 }
+  });
+
+  const matching = (...tokens) => ({
+    ...hit('Composting'),
+    highlight: { title: { matched_tokens: tokens, snippet: '' } }
+  });
+
+  // A backend that finds nothing as typed but matches `typoHits` once the
+  // retry raises num_typos — the shape of a real misspelling.
+  const clientTolerating = (typoHits, calls = []) => ({
+    collections: () => ({
+      documents: () => ({
+        search: async (params) => {
+          calls.push(params);
+          const hits = Number(params.num_typos) > 0 ? typoHits : [];
+          return { found: hits.length, hits };
+        }
+      })
+    })
+  });
+
+  it('offers the term the index holds when the query matched nothing as typed', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(false);
+    expect(el.didYouMeanState.classList.contains(HIDDEN)).toBe(false);
+    const button = el.didYouMeanState.querySelector('.mp-search-did-you-mean-btn');
+    expect(button.dataset.search).toBe('composting');
+    expect(button.textContent).toBe('Did you mean composting?');
+  });
+
+  it('costs exactly one extra request, and only on a genuine miss', async () => {
+    const calls = [];
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('composting')], calls);
+
+    await el.handleSearch('compsting');
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].num_typos).toBe(0);
+    expect(calls[1].num_typos).toBe(2);
+    // The retry keeps every other parameter, so the suggestion respects the
+    // publisher's filters and the reader's facet selection.
+    expect(calls[1].query_by).toBe(calls[0].query_by);
+  });
+
+  it('does not retry a query that already returned results', async () => {
+    const calls = [];
+    const el = mountWithConfig();
+    el.typesenseClient = {
+      collections: () => ({
+        documents: () => ({
+          search: async (params) => {
+            calls.push(params);
+            return { found: 1, hits: [hit('Composting')] };
+          }
+        })
+      })
+    };
+
+    await el.handleSearch('composting');
+
+    expect(calls).toHaveLength(1);
+    expect(el.didYouMeanState.innerHTML).toBe('');
+  });
+
+  it('skips the retry for a host that already searches with typo tolerance', async () => {
+    // Their first request was the lenient one; repeating it would find the
+    // same nothing at the cost of a second round trip.
+    const calls = [];
+    const el = mountWithConfig({ typesenseSearchParams: { num_typos: 1 } });
+    el.typesenseClient = clientTolerating([matching('composting')], calls);
+
+    await el.handleSearch('compsting');
+
+    expect(calls).toHaveLength(1);
+    expect(el.didYouMeanState.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('skips the retry when the option is turned off', async () => {
+    const calls = [];
+    const el = mountWithConfig({ enableDidYouMean: false });
+    el.typesenseClient = clientTolerating([matching('composting')], calls);
+
+    await el.handleSearch('compsting');
+
+    expect(calls).toHaveLength(1);
+    expect(el.didYouMeanState.innerHTML).toBe('');
+  });
+
+  it('keeps the plain empty state when the retry also finds nothing', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([]);
+
+    await el.handleSearch('nothing like this exists');
+
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(false);
+    expect(el.didYouMeanState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('leaves the empty state alone when the retry itself fails', async () => {
+    // A failed second request is not the reader's problem: they are already
+    // looking at a valid empty result, and an error panel would contradict it.
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const el = mountWithConfig();
+    el.typesenseClient = {
+      collections: () => ({
+        documents: () => ({
+          search: async (params) => {
+            if (Number(params.num_typos) > 0) throw new Error('timeout');
+            return { found: 0, hits: [] };
+          }
+        })
+      })
+    };
+
+    await el.handleSearch('compsting');
+
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(false);
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.didYouMeanState.innerHTML).toBe('');
+    errorLog.mockRestore();
+  });
+
+  it('drops a suggestion whose query the reader has already typed past', async () => {
+    // The retry lands a request later than the search it belongs to. Bumping
+    // the sequence stands in for that newer query having been issued meanwhile.
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    const pending = el.handleSearch('compsting');
+    el.searchSequence += 1;
+    await pending;
+
+    expect(el.didYouMeanState.innerHTML).toBe('');
+  });
+
+  it('clears a previous suggestion before the next query can produce one', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('composting')]);
+    await el.handleSearch('compsting');
+    expect(el.didYouMeanState.innerHTML).not.toBe('');
+
+    el.typesenseClient = clientTolerating([]);
+    await el.handleSearch('mulching techniques');
+
+    expect(el.didYouMeanState.innerHTML).toBe('');
+  });
+
+  it('escapes a suggested term so an indexed value cannot inject markup', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('"><img src=x onerror=alert(1)>')]);
+
+    await el.handleSearch('"><img src=y onerror=alert(2)>');
+
+    expect(el.didYouMeanState.innerHTML).not.toContain('<img');
+  });
+
+  it('runs the corrected search when the prompt is clicked', async () => {
+    const el = mountWithConfig();
+    el.typesenseClient = clientTolerating([matching('composting')]);
+    el.initEventListeners();
+
+    await el.handleSearch('compsting');
+    el.didYouMeanState.querySelector('.mp-search-did-you-mean-btn').click();
+
+    expect(el.searchInput.value).toBe('composting');
+  });
+
+  it('hands the suggestion to an alternative layout instead of the modal DOM', async () => {
+    const el = mountWithConfig({ uiStyle: 'palette' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderError: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn(),
+      renderDidYouMean: vi.fn()
+    };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    expect(el.activeLayout.renderEmpty).toHaveBeenCalledWith('compsting');
+    expect(el.activeLayout.renderDidYouMean).toHaveBeenCalledWith('composting');
+  });
+
+  it('leaves a layout chunk that predates the prompt with its plain empty surface', async () => {
+    const el = mountWithConfig({ uiStyle: 'palette' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderError: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn()
+    };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    expect(el.activeLayout.renderEmpty).toHaveBeenCalledWith('compsting');
+    expect(el.activeLayout.renderError).not.toHaveBeenCalled();
+  });
+});
+
+// Two searches can be in flight at once — the 80ms debounce narrows the window
+// but does not close it. Whichever request returns last used to win the surface,
+// so a slow early query could repaint over the results of the query the reader
+// is actually looking at.
+describe('superseded searches', () => {
+  const HIDDEN = 'mp-search-hidden';
+
+  const hit = {
+    document: { id: 'p1', title: 'Composting', url: 'https://x/p/', excerpt: 'How to', published_at: 1700000000000 }
+  };
+
+  // A backend whose per-query responses resolve when the test says so.
+  const deferredClient = (responders) => ({
+    collections: () => ({
+      documents: () => ({
+        search: (params) => responders[params.q]()
+      })
+    })
+  });
+
+  const deferred = () => {
+    let settle;
+    const promise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+    return { promise, ...settle };
+  };
+
+  it('does not let an earlier empty response wipe the newer query\'s results', async () => {
+    const slow = deferred();
+    const el = mountWithConfig();
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    expect(el.hitsList.innerHTML).toContain('Composting');
+
+    slow.resolve({ found: 0, hits: [] });
+    await first;
+
+    expect(el.hitsList.classList.contains(HIDDEN)).toBe(false);
+    expect(el.hitsList.innerHTML).toContain('Composting');
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('does not let an earlier failure raise the error state over newer results', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const slow = deferred();
+    const el = mountWithConfig();
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+
+    slow.reject(new Error('timeout'));
+    await first;
+
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.hitsList.innerHTML).toContain('Composting');
+    // The failure is still logged — a broken connection is worth a trace even
+    // when its query has been typed past.
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
+  it('attributes clicks and analytics to the query actually on screen', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    global.fetch = fetchMock;
+    const slow = deferred();
+    const el = mountWithConfig({ analytics: { endpoint: 'https://e/queries', siteId: 's' } });
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    slow.resolve({ found: 4, hits: [hit] });
+    await first;
+
+    expect(el.lastQuery).toBe('composting');
+    const queries = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).q);
+    expect(queries).not.toContain('compost');
+  });
+
+  it('keeps the same guard on the alternative-layout path', async () => {
+    const slow = deferred();
+    const el = mountWithConfig({ uiStyle: 'discovery' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderError: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn()
+    };
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    slow.resolve({ found: 0, hits: [] });
+    await first;
+
+    expect(el.activeLayout.renderResults).toHaveBeenCalledTimes(1);
+    expect(el.activeLayout.renderEmpty).not.toHaveBeenCalled();
+  });
+});
+
+// The prompt's wording is a translation from the site's own config. Its text is
+// escaped like any other string; only the wrapper around the suggested term is
+// markup — the same contract in all three layouts.
+describe('did-you-mean label contract', () => {
+  const matching = (...tokens) => ({
+    document: { id: 'p1', title: 'Composting', url: 'https://x/p/', excerpt: 'e', published_at: 1700000000000 },
+    highlight: { title: { matched_tokens: tokens, snippet: '' } }
+  });
+
+  const clientTolerating = (typoHits) => ({
+    collections: () => ({
+      documents: () => ({
+        search: async (params) => {
+          const hits = Number(params.num_typos) > 0 ? typoHits : [];
+          return { found: hits.length, hits };
+        }
+      })
+    })
+  });
+
+  it('substitutes {q} in a translated label', async () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, didYouMeanLabel: 'Meintest du {q}?' };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    const button = el.didYouMeanState.querySelector('.mp-search-did-you-mean-btn');
+    expect(button.textContent).toBe('Meintest du composting?');
+    expect(button.querySelector('.mp-search-did-you-mean-term').textContent).toBe('composting');
+  });
+
+  it('renders a label containing markup as text, never as markup', async () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, didYouMeanLabel: '<img src=x onerror=alert(1)> {q}?' };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    expect(el.didYouMeanState.querySelector('img')).toBeNull();
+    expect(el.didYouMeanState.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});

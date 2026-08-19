@@ -130,6 +130,83 @@ import Typesense from 'typesense';
     // `connectionTimeoutSeconds`.
     const DEFAULT_CONNECTION_TIMEOUT_SECONDS = 5;
 
+    // Spelling correction ("did you mean"). The retry that produces it asks for
+    // two typos per word — Typesense's own maximum — because the first, strict
+    // request already established that nothing matches as typed.
+    const DID_YOU_MEAN_NUM_TYPOS = 2;
+    // How much of the retry to mine for the correction. The top hits are the
+    // most relevant ones, and the prompt offers a single term.
+    const DID_YOU_MEAN_HIT_SAMPLE = 3;
+    const DID_YOU_MEAN_TOKEN_SAMPLE = 24;
+
+    // Whether a query already tolerated typos. Typesense's own default is 2, so
+    // an absent value is lenient; the widget's defaults set it to 0 explicitly.
+    // The value may also be the per-field CSV form ("2,1"), lenient when any
+    // field allows a typo.
+    function alreadyTypoTolerant(numTypos) {
+        if (numTypos === undefined || numTypos === null || numTypos === '') return true;
+        return String(numTypos)
+            .split(',')
+            .some(value => Number(value.trim()) > 0);
+    }
+
+    // The typo budget Typesense's defaults allow for a word this long
+    // (min_len_1typo: 4, min_len_2typo: 7). Applying the server's own rule
+    // keeps a suggestion to words it could actually have corrected.
+    function typoBudget(word) {
+        if (word.length >= 7) return 2;
+        if (word.length >= 4) return 1;
+        return 0;
+    }
+
+    // Levenshtein distance between two words, abandoned as soon as it is known
+    // to exceed `max` (returning max + 1). Only used to decide which indexed
+    // token a mistyped word most likely meant, so the exact value past the
+    // budget carries no information.
+    function editDistanceWithin(a, b, max) {
+        if (Math.abs(a.length - b.length) > max) return max + 1;
+
+        let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+        for (let i = 1; i <= a.length; i++) {
+            const current = [i];
+            let rowMin = i;
+            for (let j = 1; j <= b.length; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+                if (current[j] < rowMin) rowMin = current[j];
+            }
+            if (rowMin > max) return max + 1;
+            previous = current;
+        }
+        return previous[b.length];
+    }
+
+    // Every token Typesense reports as matched on a hit. The highlight payload
+    // is read structurally rather than field by field, because its shape varies
+    // with the Typesense version (`highlight` object vs. the older `highlights`
+    // array) and nested fields (tags.name) nest their token lists further.
+    function matchedTokensFrom(hit) {
+        const tokens = [];
+
+        const collect = (value) => {
+            if (Array.isArray(value)) value.forEach(collect);
+            else if (typeof value === 'string' && value) tokens.push(value);
+        };
+
+        const walk = (node) => {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            if (node.matched_tokens !== undefined) collect(node.matched_tokens);
+            Object.values(node).forEach(value => {
+                if (value && typeof value === 'object') walk(value);
+            });
+        };
+
+        walk(hit && hit.highlight);
+        walk(hit && hit.highlights);
+        return tokens;
+    }
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -143,6 +220,12 @@ import Typesense from 'typesense';
             this.scrollPosition = 0;
             this.selectedIndex = -1;
             this.searchDebounceTimeout = null;
+
+            // Monotonic id of the newest query. The did-you-mean retry resolves
+            // after a second request, so it checks this before rendering — a
+            // suggestion for a query the reader has already typed past must
+            // never land on top of newer results.
+            this.searchSequence = 0;
             this.cachedElements = {};
             this.typesenseClient = null;
 
@@ -170,6 +253,9 @@ import Typesense from 'typesense';
                 emptyStateMessage: 'Start typing to search...',
                 loadingMessage: 'Searching...',
                 noResultsMessage: 'No results found for your search',
+                // Spelling correction offered when a query matched nothing as
+                // typed. {q} is replaced with the suggested term.
+                didYouMeanLabel: 'Did you mean {q}?',
                 // Shown when the search request itself failed (timeout, offline,
                 // unreachable host) — never for a query that genuinely matched
                 // nothing.
@@ -701,6 +787,7 @@ import Typesense from 'typesense';
                                     <div class="${CSS_PREFIX}-empty-message">
                                         <p>${this.t('noResultsMessage')}</p>
                                     </div>
+                                    <div id="${CSS_PREFIX}-did-you-mean" class="${CSS_PREFIX}-did-you-mean ${CSS_PREFIX}-hidden"></div>
                                 </div>
                                 <div id="${CSS_PREFIX}-error" class="${CSS_PREFIX}-error ${CSS_PREFIX}-hidden" role="alert">
                                     <p class="${CSS_PREFIX}-error-title">${this.t('errorMessage')}</p>
@@ -727,6 +814,7 @@ import Typesense from 'typesense';
             this.loadingState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-loading`);
             this.emptyState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-empty`);
             this.errorState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-error`);
+            this.didYouMeanState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-did-you-mean`);
         }
 
         getCommonSearchesHtml() {
@@ -863,6 +951,17 @@ import Typesense from 'typesense';
                 }, true);
             }
 
+            // "Did you mean …" prompt (delegated; the container is part of the
+            // empty state and persists across renders).
+            if (this.didYouMeanState) {
+                this.didYouMeanState.addEventListener('click', (e) => {
+                    const button = e.target.closest(`.${CSS_PREFIX}-did-you-mean-btn`);
+                    if (!button) return;
+                    e.preventDefault();
+                    this.applySearchTerm(button.dataset.search);
+                });
+            }
+
             // Common searches
             this.attachCommonSearchListeners();
 
@@ -918,21 +1017,26 @@ import Typesense from 'typesense';
                 if (!btn) return;
 
                 e.preventDefault();
-                const searchTerm = btn.dataset.search;
-
-                if (this.searchInput) {
-                    this.selectedIndex = -1;
-                    this.searchInput.value = searchTerm;
-                    this.searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    setTimeout(() => {
-                        this.searchInput.focus();
-                        this.searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
-                    }, 0);
-                }
+                this.applySearchTerm(btn.dataset.search);
             };
 
             container.addEventListener('click', handleClick);
             container.addEventListener('touchend', handleClick);
+        }
+
+        // Put a term into the search box and run it, as if the reader had typed
+        // it. Shared by the suggestion chips and the "did you mean" prompt so
+        // both take the same debounced path and leave the caret at the end.
+        applySearchTerm(term) {
+            if (!term || !this.searchInput) return;
+
+            this.selectedIndex = -1;
+            this.searchInput.value = term;
+            this.searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            setTimeout(() => {
+                this.searchInput.focus();
+                this.searchInput.setSelectionRange(term.length, term.length);
+            }, 0);
         }
 
         lockBodyScroll() {
@@ -1090,6 +1194,11 @@ import Typesense from 'typesense';
         async handleSearch(query) {
             query = query?.trim();
 
+            // Every call supersedes the one before it. The did-you-mean retry
+            // finishes after its own round trip, so it carries this token and
+            // renders only while it still describes what is on screen.
+            const sequence = ++this.searchSequence;
+
             if (!query) {
                 this.selectedIndex = -1;
                 if (this.activeLayout) {
@@ -1109,11 +1218,17 @@ import Typesense from 'typesense';
             // the normalized model + facet counts to the layout to render.
             if (this.activeLayout) {
                 this.activeLayout.renderLoading();
+                const searchParams = this.getSearchParameters();
                 try {
                     const results = await this.getTypesenseClient()
                         .collections(this.config.collectionName)
                         .documents()
-                        .search({ q: query, ...this.getSearchParameters() });
+                        .search({ q: query, ...searchParams });
+
+                    // A superseded query's results were never on screen, so they
+                    // must not repaint over the newer query's — nor be reported
+                    // to analytics or take over click attribution.
+                    if (sequence !== this.searchSequence) return;
 
                     const resultCount = typeof results.found === 'number' ? results.found : results.hits.length;
                     this.lastQuery = query;
@@ -1124,12 +1239,23 @@ import Typesense from 'typesense';
                     }
                     if (!results.hits.length) {
                         this.activeLayout.renderEmpty(query);
+                        const suggestion = await this.fetchDidYouMean(query, searchParams);
+                        // Additive: a layout chunk older than this feature keeps
+                        // its plain empty surface rather than breaking.
+                        if (suggestion && sequence === this.searchSequence &&
+                            typeof this.activeLayout.renderDidYouMean === 'function') {
+                            this.activeLayout.renderDidYouMean(suggestion);
+                        }
                         return;
                     }
                     const model = results.hits.map((hit, i) => this.normalizeHit(hit, i));
                     this.activeLayout.renderResults(model, { query, found: resultCount, facetCounts: results.facet_counts });
                 } catch (error) {
+                    // Logged even when superseded — a failing connection is
+                    // worth a console trace whether or not its query is still
+                    // the current one.
                     this.logSearchError(error);
+                    if (sequence !== this.searchSequence) return;
                     // A failed request is not an empty archive. Layout chunks
                     // are fetched separately from the core, so fall back to the
                     // empty surface for a layout that predates renderError.
@@ -1161,6 +1287,10 @@ import Typesense from 'typesense';
                     .documents()
                     .search(searchParameters);
 
+                // Superseded while in flight: the newer query owns the surface,
+                // and its own request is still running — so leave the loading
+                // state alone rather than reporting this one's outcome.
+                if (sequence !== this.searchSequence) return;
 
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
 
@@ -1183,10 +1313,18 @@ import Typesense from 'typesense';
                 }
 
                 if (results.hits.length === 0) {
+                    // Cleared first, so a suggestion for an earlier query can
+                    // never sit under this one while the retry is in flight.
+                    this.renderDidYouMean(null);
                     if (this.emptyState) this.emptyState.classList.remove(`${CSS_PREFIX}-hidden`);
                     if (this.hitsList) {
                         this.hitsList.innerHTML = '';
                         this.hitsList.classList.add(`${CSS_PREFIX}-hidden`);
+                    }
+
+                    const suggestion = await this.fetchDidYouMean(query, searchParams);
+                    if (suggestion && sequence === this.searchSequence) {
+                        this.renderDidYouMean(suggestion);
                     }
                     return;
                 }
@@ -1253,7 +1391,9 @@ import Typesense from 'typesense';
                 this.hitsList.classList.toggle(`${CSS_PREFIX}-grid`, this.config.template === 'grid');
                 this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             } catch (error) {
+                // Logged even when superseded (see the layout path above).
                 this.logSearchError(error);
+                if (sequence !== this.searchSequence) return;
                 // The request failed, so show the error state — not the empty
                 // state, which would tell the reader the archive has nothing on
                 // their topic. The empty state was hidden before the request.
@@ -1265,6 +1405,130 @@ import Typesense from 'typesense';
                 }
                 if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
             }
+        }
+
+        // A query that matched nothing, re-run once with typo tolerance raised,
+        // so a misspelling can be offered back to the reader as a correction
+        // instead of a dead end. Returns the corrected phrase, or null when
+        // there is nothing worth offering.
+        async fetchDidYouMean(query, searchParams) {
+            // On unless the host turned it off: the widget matches strictly
+            // (num_typos: 0), so without this a mistyped word is a dead end.
+            if (this.config.enableDidYouMean === false) return null;
+
+            // A host that already searches leniently took its best shot on the
+            // first request; repeating it more leniently would find the same
+            // nothing. So strict-matching hosts (the default) pay one extra
+            // request, and only on a genuine miss; lenient ones pay none.
+            if (alreadyTypoTolerant(searchParams.num_typos)) return null;
+
+            let results;
+            try {
+                results = await this.getTypesenseClient()
+                    .collections(this.config.collectionName)
+                    .documents()
+                    .search({
+                        ...searchParams,
+                        q: query,
+                        // The defaults switch typo tolerance off both ways, so
+                        // the retry has to lift both.
+                        typo_tolerance: true,
+                        num_typos: DID_YOU_MEAN_NUM_TYPOS
+                    });
+            } catch (error) {
+                // The correction is an extra on top of an empty result the
+                // reader is already looking at. A failed retry leaves that
+                // empty state alone rather than escalating to an error the
+                // first request never hit.
+                this.logSearchError(error);
+                return null;
+            }
+
+            const hits = Array.isArray(results?.hits) ? results.hits : [];
+            if (!hits.length) return null;
+
+            return this.didYouMeanFromHits(query, hits);
+        }
+
+        // The phrase to offer for `query`, derived from what the typo-tolerant
+        // retry actually matched in the index — so the wording comes from the
+        // publisher's own posts rather than a client-side dictionary. Each typed
+        // word is either confirmed by a matched token or replaced by the nearest
+        // one within the typo budget Typesense allows for a word that length.
+        // Returns null when nothing changed: there is nothing to suggest to a
+        // reader who already typed the words the index holds.
+        didYouMeanFromHits(query, hits) {
+            const candidates = [];
+            const indexed = new Set();
+
+            for (const hit of hits.slice(0, DID_YOU_MEAN_HIT_SAMPLE)) {
+                for (const token of matchedTokensFrom(hit)) {
+                    const lower = token.toLowerCase();
+                    if (indexed.has(lower)) continue;
+                    indexed.add(lower);
+                    candidates.push(token);
+                    if (candidates.length >= DID_YOU_MEAN_TOKEN_SAMPLE) break;
+                }
+                if (candidates.length >= DID_YOU_MEAN_TOKEN_SAMPLE) break;
+            }
+
+            if (candidates.length === 0) return null;
+
+            let corrected = false;
+            const words = query.split(/\s+/).filter(Boolean).map(word => {
+                // The index holds this word as typed — whatever went wrong with
+                // the query, it was not this one.
+                if (indexed.has(word.toLowerCase())) return word;
+
+                const budget = typoBudget(word);
+                if (budget === 0) return word;
+
+                let best = null;
+                let bestDistance = budget + 1;
+                for (const candidate of candidates) {
+                    const distance = editDistanceWithin(word.toLowerCase(), candidate.toLowerCase(), budget);
+                    if (distance < bestDistance) {
+                        best = candidate;
+                        bestDistance = distance;
+                        // A distance of 0 is impossible here (the word is not in
+                        // the index), so 1 is as close as a candidate can get.
+                        if (distance === 1) break;
+                    }
+                }
+
+                if (!best) return word;
+                corrected = true;
+                return best;
+            });
+
+            return corrected ? words.join(' ') : null;
+        }
+
+        // The "did you mean" prompt inside the modal's empty state. Passing null
+        // clears it.
+        renderDidYouMean(term) {
+            if (!this.didYouMeanState) return;
+
+            if (!term) {
+                this.didYouMeanState.innerHTML = '';
+                this.didYouMeanState.classList.add(`${CSS_PREFIX}-hidden`);
+                return;
+            }
+
+            const safeTerm = this.escapeHtmlAttr(term);
+            // The translation is publisher config, not markup: its own text is
+            // escaped and only the wrapper around the term is HTML. Splitting on
+            // the placeholder — rather than escaping the whole string and then
+            // substituting into it — keeps that contract obvious, and is the
+            // same in all three layouts.
+            const label = this.t('didYouMeanLabel')
+                .split('{q}')
+                .map(part => this.escapeHtmlAttr(part))
+                .join(`<strong class="${CSS_PREFIX}-did-you-mean-term">${safeTerm}</strong>`);
+
+            this.didYouMeanState.innerHTML =
+                `<button type="button" class="${CSS_PREFIX}-did-you-mean-btn" data-search="${safeTerm}">${label}</button>`;
+            this.didYouMeanState.classList.remove(`${CSS_PREFIX}-hidden`);
         }
 
         getSearchParameters() {
