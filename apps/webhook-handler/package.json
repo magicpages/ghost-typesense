@@ -13,7 +13,7 @@
     "build": "tsup src/handler.ts --format cjs",
     "clean": "rimraf dist",
     "dev": "tsup src/handler.ts --format cjs --dts --watch",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

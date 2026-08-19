@@ -11,7 +11,6 @@ function injectStyles(shadowRoot) {
   if (!shadowRoot || shadowRoot.querySelector('style[data-mp-layout="discovery"]')) return;
   const style = document.createElement('style');
   style.setAttribute('data-mp-layout', 'discovery');
-  // eslint-disable-next-line no-undef
   style.textContent = typeof LAYOUT_CSS === 'string' ? LAYOUT_CSS : '';
   shadowRoot.appendChild(style);
 }
