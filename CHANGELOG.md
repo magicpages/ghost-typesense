@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-19
+
+### Added
+- **"Did you mean …?" for a query that matched nothing.** The widget searches
+  strictly (`num_typos: 0`), which is what keeps results predictable — and left
+  a reader who mistyped a word with "No results found" and nowhere to go, while
+  `enableDidYouMean` sat in the config doing nothing at all. A zero-hit query is
+  now re-run once with typo tolerance raised, and if that finds posts the reader
+  is offered the corrected term: a button under the empty message in the modal
+  and discovery layouts, and a navigable row in the palette, so `↵` accepts it.
+  The suggestion comes from the `matched_tokens` the retry returned, so it is
+  always a word the site's own posts contain rather than a guess from a
+  dictionary that has never seen the archive, and words are only replaced within
+  the typo budget Typesense itself would allow for their length. The retry is
+  skipped for sites already searching with a non-zero `num_typos`, so strict
+  sites pay one extra request only on a genuine miss and lenient ones pay none.
+  Translatable via the new `didYouMeanLabel` key; turn it off with
+  `enableDidYouMean: false`.
+- **The facet rail admits when a list was cut short.** Typesense returns facet
+  values by count descending, so the display cap always dropped the least common
+  ones — a tag on two posts could never appear, even when those were the top two
+  results, which reads as "this topic doesn't exist" rather than "this list is
+  abridged". Each search now asks for one value more than it will show; that
+  extra value is never rendered, it is simply what distinguishes a cut list from
+  a complete one. Where it appears, the field gets a **Show more** control that
+  widens the list and re-runs the query, and **Show less** to collapse it, so a
+  wider rail costs one request and only when a reader asks. Both labels are
+  translatable (`facetShowMoreLabel`, `facetShowLessLabel`).
+
+### Fixed
+- **A facet's `limit` now does what it documents.** It was described as the
+  number of values shown for a field, but only fed the global
+  `max_facet_values`; the modal and the discovery rail then rendered every value
+  the response carried, so a field with `limit: 5` displayed as many values as
+  the largest facet allowed.
+- **A selected facet value can always be switched off again.** It stayed on
+  screen only while the response happened to carry it, so a value ranked below
+  what was requested lost its chip — and a filter that narrowed the results to
+  nothing lost the whole group, taking the **Clear filters** control with it and
+  leaving closing the modal as the only escape.
+- **`searchAuthors` works alongside a custom `query_by`.** It appended `authors`
+  while building the default parameters, and a host-supplied
+  `typesenseSearchParams.query_by` replaced those defaults wholesale — so the
+  documented way to make author names matchable silently did nothing for exactly
+  the sites that had tuned their query. The field is now added to the merged
+  parameters, with `query_by_weights` extended alongside it when weights are
+  configured, since Typesense rejects a search whose two lists differ in length.
+- **`typo_tolerance` is no longer treated as a Typesense parameter.** It is not
+  one, and never was: the widget sent it, this project documented it as the
+  switch for typo correction, and Typesense ignored it — so a site that set
+  `typo_tolerance: true` and stopped there kept matching strictly, with nothing
+  anywhere to say so. It is dropped from the requests, and a host-supplied value
+  is now read as the alias its author meant (`true` becomes `num_typos: 2`
+  unless `num_typos` is set explicitly) with a deprecation notice in the browser
+  console. `num_typos` is the control; the README explains why the widget's `0`
+  is deliberately stricter than Typesense's own default of `2`.
+- **The palette and discovery layouts open from a URL that already carries the
+  search.** Loading a page at `#/search`, `?s=…` or `?q=…` left the panel hidden
+  forever, because initialization waited on the state handling that was waiting
+  on initialization. Following a shared search link looked exactly like search
+  being broken. Opening now waits only for the surface to be mounted, a query in
+  the hash path reaches those layouts (it was only ever written to the modal's
+  input), and a `?s=` link no longer runs its query twice.
+- **A slow search can no longer repaint over a newer one.** Results, empty and
+  failure states all rendered unconditionally when their request returned, so an
+  earlier query that finished late could wipe the results the reader was looking
+  at — and take over click attribution with it. Failures are still logged when
+  superseded; they simply no longer reach the screen.
+
+### Changed
+- The search widget's ESLint setup moved to flat config, and the toolchain moved
+  with it (ESLint 10, typescript-eslint 8). Two rethrows in the Ghost fetch path
+  now attach the original error as `cause`, which the new rules caught.
+
 ## [2.1.0] - 2026-08-04
 
 ### Fixed
