@@ -201,6 +201,8 @@ window.__MP_SEARCH_CONFIG__ = {
 
 This is opt-in so existing sites' search behaviour is unchanged. For finer control you can instead add `authors` to `searchFields` with an explicit weight.
 
+It also holds when you set your own `typesenseSearchParams.query_by`: the `authors` field is added to that list rather than to the defaults it replaces, and `query_by_weights` is extended alongside it so the two stay the same length (Typesense rejects a search where they differ). If `authors` is already in your `query_by` or `searchFields`, nothing is added and your weight stands.
+
 ### Advanced Search Parameters
 
 Use `typesenseSearchParams` to override any of the default Typesense search parameters. Custom parameters are merged with the defaults, so you only need to specify what you want to change.
