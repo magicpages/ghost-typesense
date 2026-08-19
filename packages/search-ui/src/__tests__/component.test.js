@@ -982,3 +982,151 @@ describe('did-you-mean label contract', () => {
     expect(el.didYouMeanState.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 });
+
+// Typesense returns facet values by count descending, so a cap always drops the
+// least common ones. A value that exists on the current results but falls
+// outside it used to be simply absent — indistinguishable, to a reader, from a
+// topic the archive does not cover.
+describe('facet truncation', () => {
+  const facetConfig = (limit) => ({
+    facets: [{ field: 'tags.name', label: 'Topics', limit }]
+  });
+
+  const countsFor = (n) =>
+    Array.from({ length: n }, (_, i) => ({ value: `Tag ${i + 1}`, count: n - i }));
+
+  const render = (el, counts) => {
+    el.renderFacets([{ field_name: 'tags.name', counts }]);
+    return {
+      chips: [...el.facetsContainer.querySelectorAll('.mp-search-facet-chip')],
+      more: el.facetsContainer.querySelector('.mp-search-facet-more')
+    };
+  };
+
+  it('asks for one more value than it will show, so a cut list is detectable', () => {
+    const el = mountWithConfig(facetConfig(10));
+    expect(el.getSearchParameters().max_facet_values).toBe(11);
+  });
+
+  it('sizes the request by the largest facet, since the parameter is global', () => {
+    const el = mountWithConfig({
+      facets: [
+        { field: 'tags.name', label: 'Topics', limit: 5 },
+        { field: 'authors', label: 'Authors', limit: 12 }
+      ]
+    });
+    expect(el.getSearchParameters().max_facet_values).toBe(13);
+  });
+
+  it('shows only the configured limit, not everything the response carried', () => {
+    // The smaller facet receives the larger facet's allowance; its own limit is
+    // what governs the list a reader sees.
+    const el = mountWithConfig(facetConfig(3));
+    const { chips } = render(el, countsFor(11));
+
+    expect(chips).toHaveLength(3);
+    expect(chips.map(c => c.dataset.facetValue)).toEqual(['Tag 1', 'Tag 2', 'Tag 3']);
+  });
+
+  it('offers the rest when the response held more than the limit', () => {
+    const el = mountWithConfig(facetConfig(3));
+    const { more } = render(el, countsFor(4));
+
+    expect(more).not.toBeNull();
+    expect(more.textContent.trim()).toBe('Show more');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    // The control points at the list it expands.
+    expect(el.facetsContainer.querySelector(`#${more.getAttribute('aria-controls')}`)).not.toBeNull();
+  });
+
+  it('stays silent when the whole list fits', () => {
+    const el = mountWithConfig(facetConfig(3));
+    const { chips, more } = render(el, countsFor(3));
+
+    expect(chips).toHaveLength(3);
+    expect(more).toBeNull();
+  });
+
+  it('raises the cap and re-runs the query when the reader asks for more', async () => {
+    const calls = [];
+    const el = mountWithConfig(facetConfig(3));
+    el.typesenseClient = {
+      collections: () => ({
+        documents: () => ({
+          search: async (params) => {
+            calls.push(params);
+            return { found: 0, hits: [], facet_counts: [] };
+          }
+        })
+      })
+    };
+    el.initEventListeners();
+    el.searchInput.value = 'ghost';
+    render(el, countsFor(4));
+
+    el.facetsContainer.querySelector('.mp-search-facet-more').click();
+    await Promise.resolve();
+
+    expect(el.expandedFacets['tags.name']).toBe(43);
+    expect(calls.at(-1).max_facet_values).toBe(44);
+  });
+
+  it('shows the wider list and a way back once expanded', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.expandFacet('tags.name');
+    const { chips, more } = render(el, countsFor(11));
+
+    expect(chips).toHaveLength(11);
+    expect(more.textContent.trim()).toBe('Show less');
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    expect(more.dataset.facetExpand).toBe('less');
+  });
+
+  it('keeps offering more while values remain beyond the raised cap', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.expandFacet('tags.name');
+    const { more } = render(el, countsFor(60));
+
+    expect(more.textContent.trim()).toBe('Show more');
+    el.expandFacet('tags.name');
+    expect(el.expandedFacets['tags.name']).toBe(83);
+  });
+
+  it('collapses back to the publisher\'s limit', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.expandFacet('tags.name');
+    el.collapseFacet('tags.name');
+
+    expect(render(el, countsFor(11)).chips).toHaveLength(3);
+    expect(el.getSearchParameters().max_facet_values).toBe(4);
+  });
+
+  it('keeps a selected value visible even when it ranks below the cap', () => {
+    // Otherwise the only way out of that filter is Clear filters — the chip
+    // that switched it on would have vanished.
+    const el = mountWithConfig(facetConfig(3));
+    el.selectedFacets = { 'tags.name': new Set(['Tag 9']) };
+    const { chips } = render(el, countsFor(11));
+
+    const values = chips.map(c => c.dataset.facetValue);
+    expect(values).toContain('Tag 9');
+    expect(values.slice(0, 3)).toEqual(['Tag 1', 'Tag 2', 'Tag 3']);
+    expect([...chips].find(c => c.dataset.facetValue === 'Tag 9').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('falls back to the default limit for a missing or nonsensical one', () => {
+    for (const limit of [undefined, 0, -4, 'ten', NaN]) {
+      const el = mountWithConfig(facetConfig(limit));
+      expect(render(el, countsFor(20)).chips).toHaveLength(10);
+    }
+  });
+
+  it('collapses expanded facets when the modal closes', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.expandFacet('tags.name');
+    el.isModalOpen = true;
+    el.closeModal();
+
+    expect(el.expandedFacets).toEqual({});
+  });
+});

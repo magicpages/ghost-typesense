@@ -207,6 +207,13 @@ import Typesense from 'typesense';
         return tokens;
     }
 
+    // Facet display. A facet's `limit` is how many values it shows; one more
+    // than that is requested, so a list that was cut can be told apart from a
+    // complete one without asking Typesense for a total. "Show more" raises the
+    // cap by a step, which costs one request and only when a reader asks.
+    const DEFAULT_FACET_LIMIT = 10;
+    const FACET_EXPANSION_STEP = 40;
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -240,6 +247,11 @@ import Typesense from 'typesense';
             // closes. Only used when `facets` is configured.
             this.selectedFacets = {};
 
+            // Facets the reader expanded past their configured limit, keyed by
+            // field name to the raised cap. Also reset when the modal closes,
+            // so a new session starts from the publisher's own limits.
+            this.expandedFacets = {};
+
             // Suggestions fetched from `suggestionsUrl`, cached for the page
             // session. `suggestionsFetched` guards against re-fetching (and
             // re-failing) on every modal open.
@@ -270,6 +282,10 @@ import Typesense from 'typesense';
                 ariaModalLabel: 'Search',
                 ariaFacetsLabel: 'Filters',
                 clearFiltersLabel: 'Clear filters',
+                // Shown under a facet whose value list was cut short, and on the
+                // control that collapses it again.
+                facetShowMoreLabel: 'Show more',
+                facetShowLessLabel: 'Show less',
                 membersLabel: 'Members only',
                 ariaMembersLabel: 'Members-only content',
                 untitledPost: 'Untitled',
@@ -645,6 +661,15 @@ import Typesense from 'typesense';
                     if (set.has(value)) set.delete(value); else set.add(value);
                 },
                 clearFacets: () => { this.selectedFacets = {}; },
+                // Facet display caps, so a layout can render the same abridged
+                // list the core does and show the same "show more" affordance.
+                getFacetRows: (field, counts) => {
+                    const facet = (this.config.facets || []).find(f => f.field === field);
+                    if (!facet) return null;
+                    return this.facetRows(facet, Array.isArray(counts) ? counts : []);
+                },
+                expandFacet: (field) => this.expandFacet(field),
+                collapseFacet: (field) => this.collapseFacet(field),
                 setFacetFilter: () => {},
                 search: (q) => this.handleSearch(q),
                 requery: () => this.rerunQueryForFacets(),
@@ -1133,8 +1158,10 @@ import Typesense from 'typesense';
             // the first search is emitted even if it repeats a prior query.
             this.lastQuery = '';
             this.lastTrackedQuery = null;
-            // Clear any active facet filters so a new session starts unfiltered.
+            // Clear any active facet filters so a new session starts unfiltered,
+            // and collapse any expanded facet back to its configured limit.
             this.selectedFacets = {};
+            this.expandedFacets = {};
             this.handleSearch('');
 
             // Restore focus
@@ -1711,9 +1738,16 @@ import Typesense from 'typesense';
             if (this.config.facets?.length) {
                 mergedParams.facet_by = this.config.facets.map(f => f.field).join(',');
 
-                const maxValues = Math.max(...this.config.facets.map(f => f.limit || 10));
-                if (Number.isFinite(maxValues)) {
-                    mergedParams.max_facet_values = maxValues;
+                // One more than the longest list any facet will show. The extra
+                // value is never rendered; it is what tells a cut list apart
+                // from a complete one. `max_facet_values` is a single global
+                // parameter, so the largest cap wins — which is also why a facet
+                // with a smaller limit receives more values than it shows, and
+                // can detect its own truncation from the same response.
+                const caps = this.config.facets.map(f => this.facetCap(f));
+                const maxCap = Math.max(...caps);
+                if (Number.isFinite(maxCap)) {
+                    mergedParams.max_facet_values = maxCap + 1;
                 }
 
                 const composed = this.composeFilterBy(mergedParams.filter_by);
@@ -1725,6 +1759,60 @@ import Typesense from 'typesense';
             }
 
             return mergedParams;
+        }
+
+        // How many values a facet shows when collapsed: its configured `limit`,
+        // or the default. A non-numeric or non-positive limit falls back to the
+        // default rather than hiding the facet entirely.
+        facetLimit(facet) {
+            const limit = facet && facet.limit;
+            return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DEFAULT_FACET_LIMIT;
+        }
+
+        // How many values it shows right now — the same, unless the reader has
+        // expanded it.
+        facetCap(facet) {
+            const limit = this.facetLimit(facet);
+            const raised = facet ? this.expandedFacets[facet.field] : undefined;
+            return Number.isFinite(raised) && raised > limit ? raised : limit;
+        }
+
+        // Raise a facet's cap by one step. The wider list comes from the next
+        // request, so the reader pays for it only by asking.
+        expandFacet(field) {
+            const facet = (this.config.facets || []).find(f => f.field === field);
+            if (!facet) return;
+            this.expandedFacets[field] = this.facetCap(facet) + FACET_EXPANSION_STEP;
+        }
+
+        // Back to the publisher's configured limit.
+        collapseFacet(field) {
+            delete this.expandedFacets[field];
+        }
+
+        // The values a facet renders, and whether the response held more than
+        // that. Selected values are always kept, even when they rank below the
+        // cap — a filter the reader turned on must stay switchable off.
+        facetRows(facet, counts) {
+            const cap = this.facetCap(facet);
+            const selected = this.selectedFacets[facet.field];
+            const visible = counts.slice(0, cap);
+
+            if (selected && selected.size) {
+                const shown = new Set(visible.map(c => c.value));
+                for (const entry of counts.slice(cap)) {
+                    if (selected.has(entry.value) && !shown.has(entry.value)) {
+                        visible.push(entry);
+                        shown.add(entry.value);
+                    }
+                }
+            }
+
+            return {
+                rows: visible,
+                truncated: counts.length > cap,
+                expanded: cap > this.facetLimit(facet)
+            };
         }
 
         // Build the `filter_by` clause for the currently selected facet values:
@@ -1778,12 +1866,13 @@ import Typesense from 'typesense';
                 countsByField[fc.field_name] = fc.counts || [];
             }
 
-            const groups = this.config.facets.map(facet => {
+            const groups = this.config.facets.map((facet, groupIndex) => {
                 const counts = countsByField[facet.field] || [];
                 if (counts.length === 0) return '';
 
+                const { rows, truncated, expanded } = this.facetRows(facet, counts);
                 const selected = this.selectedFacets[facet.field];
-                const chips = counts.map(({ value, count }) => {
+                const chips = rows.map(({ value, count }) => {
                     const isSelected = selected ? selected.has(value) : false;
                     const safeValue = this.escapeHtmlAttr(value);
                     return `
@@ -1798,10 +1887,26 @@ import Typesense from 'typesense';
                     `;
                 }).join('');
 
+                // A cut list says so, and offers the rest. Without this the
+                // missing values read as "this topic doesn't exist" rather than
+                // "this list is abridged".
+                const chipsId = `${CSS_PREFIX}-facet-chips-${groupIndex}`;
+                const toggle = truncated || expanded
+                    ? `<button type="button"
+                            class="${CSS_PREFIX}-facet-more"
+                            data-facet-field="${this.escapeHtmlAttr(facet.field)}"
+                            data-facet-expand="${truncated ? 'more' : 'less'}"
+                            aria-controls="${chipsId}"
+                            aria-expanded="${expanded ? 'true' : 'false'}">${
+                                truncated ? this.t('facetShowMoreLabel') : this.t('facetShowLessLabel')
+                            }</button>`
+                    : '';
+
                 return `
                     <div class="${CSS_PREFIX}-facet-group">
                         <div class="${CSS_PREFIX}-facet-group-label">${this.escapeHtmlAttr(facet.label || facet.field)}</div>
-                        <div class="${CSS_PREFIX}-facet-chips" role="list">${chips}</div>
+                        <div id="${chipsId}" class="${CSS_PREFIX}-facet-chips" role="list">${chips}</div>
+                        ${toggle}
                     </div>
                 `;
             }).join('');
@@ -1826,6 +1931,19 @@ import Typesense from 'typesense';
                 if (clearBtn) {
                     e.preventDefault();
                     this.selectedFacets = {};
+                    this.rerunQueryForFacets();
+                    return;
+                }
+
+                const moreBtn = e.target.closest(`.${CSS_PREFIX}-facet-more`);
+                if (moreBtn) {
+                    e.preventDefault();
+                    const field = moreBtn.dataset.facetField;
+                    if (!field) return;
+                    if (moreBtn.dataset.facetExpand === 'less') this.collapseFacet(field);
+                    else this.expandFacet(field);
+                    // The wider (or narrower) list comes from the response, so
+                    // the current query is re-run for it.
                     this.rerunQueryForFacets();
                     return;
                 }

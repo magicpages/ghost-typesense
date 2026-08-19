@@ -330,6 +330,31 @@
   box-shadow: 0 0 0 2px var(--accent-color);
 }
 
+/* Truncation control, sitting under the group's chips in the rail. */
+.mp-search-discovery-facet-more {
+  /* Left-aligned with the chips above it: the group is a flex column, so a
+     stretched button would centre its label instead. */
+  align-self: flex-start;
+  text-align: left;
+  margin-top: calc(0.375 * var(--mp-rem));
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
+  font-size: calc(0.8125 * var(--mp-rem));
+  cursor: pointer;
+  padding: calc(0.25 * var(--mp-rem)) 0;
+}
+
+.mp-search-discovery-facet-more:hover {
+  text-decoration: underline;
+}
+
+.mp-search-discovery-facet-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-color);
+  border-radius: calc(0.25 * var(--mp-rem));
+}
+
 .mp-search-discovery-facet-empty {
   color: var(--color-text-secondary);
   font-size: calc(0.8125 * var(--mp-rem));

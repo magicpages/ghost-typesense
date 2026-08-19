@@ -11,11 +11,14 @@ globalThis.BUNDLED_CSS = '';
 // construct their own elements with explicit config, so leave this unset.
 delete globalThis.__MP_SEARCH_CONFIG__;
 
-// jsdom implements neither of these, and both are reached by ordinary widget
-// code: matchMedia backs the system-theme detection wired up in
-// initEventListeners, and scrollIntoView keeps the active row visible in the
-// palette. Neither has anything to observe in a headless DOM, so a no-op stub
-// is the accurate stand-in.
+// jsdom gaps reached by ordinary widget code: matchMedia backs the system-theme
+// detection wired up in initEventListeners, scrollIntoView keeps the active row
+// visible in the palette, and window.scrollTo restores the reader's scroll
+// position when the modal closes. jsdom defines that last one, but its
+// implementation raises "Not implemented" through the virtual console, so it is
+// replaced outright rather than guarded like the other two. None of the three
+// has anything to observe in a headless DOM, so a no-op stub is the accurate
+// stand-in.
 if (typeof window.matchMedia !== 'function') {
   window.matchMedia = () => ({
     matches: false,
@@ -30,3 +33,5 @@ if (typeof window.matchMedia !== 'function') {
 if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
+
+window.scrollTo = () => {};
