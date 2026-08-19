@@ -298,9 +298,13 @@ export default function createPaletteLayout(ctx) {
 
     flatItems.push({ kind: 'suggest', value: currentSuggestion });
     const idx = flatItems.length - 1;
+    // Label text and term are both escaped; only the wrapper is markup (the
+    // same contract the modal and discovery layouts use).
     const label = ctx
       .t('didYouMeanLabel')
-      .replace('{q}', `<strong class="${L}-suggest-term">${ctx.escapeHtmlAttr(currentSuggestion)}</strong>`);
+      .split('{q}')
+      .map((part) => ctx.escapeHtmlAttr(part))
+      .join(`<strong class="${L}-suggest-term">${ctx.escapeHtmlAttr(currentSuggestion)}</strong>`);
 
     return `
       <div class="${L}-group" role="group">

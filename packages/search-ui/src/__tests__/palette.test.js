@@ -132,3 +132,41 @@ describe('palette did-you-mean prompt', () => {
     expect(results.querySelector('.mp-search-palette-row-suggest')).toBeNull();
   });
 });
+
+// The label is a translation from the site's config, so its text is escaped and
+// only the wrapper around the suggested term is markup — matching the modal and
+// discovery layouts, which previously differed on this.
+describe('palette did-you-mean label contract', () => {
+  function mountWithLabel(label) {
+    const ctx = makeCtx();
+    ctx.t = (k) => (k === 'didYouMeanLabel' ? label : k);
+    const layout = createPaletteLayout(ctx);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountedHosts.push(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = layout.buildMarkup();
+    layout.cacheElements(shadow);
+    return { layout, shadow };
+  }
+
+  it('substitutes {q} in a translated label', () => {
+    const { layout, shadow } = mountWithLabel('Meintest du {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const row = shadow.querySelector('.mp-search-palette-row-suggest');
+    expect(row.textContent).toContain('Meintest du composting?');
+    expect(row.querySelector('.mp-search-palette-suggest-term').textContent).toBe('composting');
+  });
+
+  it('renders a label containing markup as text, never as markup', () => {
+    const { layout, shadow } = mountWithLabel('<img src=x onerror=alert(1)> {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const results = shadow.getElementById('mp-search-palette-listbox');
+    expect(results.querySelector('img')).toBeNull();
+    expect(results.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});

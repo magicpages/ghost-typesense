@@ -166,3 +166,80 @@ describe('discovery did-you-mean prompt', () => {
     expect(shadow.querySelector('.mp-search-discovery-input').value).toBe('composting');
   });
 });
+
+// A listbox is a set of options. The container only carries that role while it
+// holds result cards — the prompt, the zero-results message with its button, and
+// the failure alert are prose and controls, which assistive tech may skip or
+// mis-announce as malformed options inside a listbox.
+describe('discovery listbox role', () => {
+  const roleOf = (shadow) =>
+    shadow.getElementById('mp-search-discovery-results').getAttribute('role');
+
+  it('carries the listbox role while results are on screen', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    expect(roleOf(shadow)).toBe('listbox');
+  });
+
+  it('drops it for the empty state, so the suggestion button is not a listbox child', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(roleOf(shadow)).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-suggest')).not.toBeNull();
+  });
+
+  it('drops it for the initial and failure surfaces too', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderError('composting');
+    expect(roleOf(shadow)).toBeNull();
+
+    layout.renderResults(modelWith(null), { found: 1 });
+    layout.renderInitial();
+    expect(roleOf(shadow)).toBeNull();
+  });
+
+  it('restores it once results render again', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderEmpty('compsting');
+    layout.renderResults(modelWith(null), { found: 1 });
+    expect(roleOf(shadow)).toBe('listbox');
+  });
+});
+
+describe('discovery did-you-mean label contract', () => {
+  function mountWithLabel(label) {
+    const ctx = makeCtx();
+    ctx.t = (k) => (k === 'didYouMeanLabel' ? label : k);
+    const layout = createDiscoveryLayout(ctx);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountedHosts.push(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = layout.buildMarkup();
+    layout.cacheElements(shadow);
+    return { layout, shadow };
+  }
+
+  it('substitutes {q} in a translated label', () => {
+    const { layout, shadow } = mountWithLabel('Meintest du {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    expect(shadow.querySelector('.mp-search-discovery-suggest').textContent)
+      .toBe('Meintest du composting?');
+  });
+
+  it('renders a label containing markup as text, never as markup', () => {
+    const { layout, shadow } = mountWithLabel('<img src=x onerror=alert(1)> {q}?');
+    layout.renderEmpty('compsting');
+    layout.renderDidYouMean('composting');
+
+    const button = shadow.querySelector('.mp-search-discovery-suggest');
+    expect(button.querySelector('img')).toBeNull();
+    expect(button.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});

@@ -1225,6 +1225,11 @@ import Typesense from 'typesense';
                         .documents()
                         .search({ q: query, ...searchParams });
 
+                    // A superseded query's results were never on screen, so they
+                    // must not repaint over the newer query's — nor be reported
+                    // to analytics or take over click attribution.
+                    if (sequence !== this.searchSequence) return;
+
                     const resultCount = typeof results.found === 'number' ? results.found : results.hits.length;
                     this.lastQuery = query;
                     this.trackSearch(query, resultCount);
@@ -1246,7 +1251,11 @@ import Typesense from 'typesense';
                     const model = results.hits.map((hit, i) => this.normalizeHit(hit, i));
                     this.activeLayout.renderResults(model, { query, found: resultCount, facetCounts: results.facet_counts });
                 } catch (error) {
+                    // Logged even when superseded — a failing connection is
+                    // worth a console trace whether or not its query is still
+                    // the current one.
                     this.logSearchError(error);
+                    if (sequence !== this.searchSequence) return;
                     // A failed request is not an empty archive. Layout chunks
                     // are fetched separately from the core, so fall back to the
                     // empty surface for a layout that predates renderError.
@@ -1278,6 +1287,10 @@ import Typesense from 'typesense';
                     .documents()
                     .search(searchParameters);
 
+                // Superseded while in flight: the newer query owns the surface,
+                // and its own request is still running — so leave the loading
+                // state alone rather than reporting this one's outcome.
+                if (sequence !== this.searchSequence) return;
 
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
 
@@ -1378,7 +1391,9 @@ import Typesense from 'typesense';
                 this.hitsList.classList.toggle(`${CSS_PREFIX}-grid`, this.config.template === 'grid');
                 this.hitsList.classList.remove(`${CSS_PREFIX}-hidden`);
             } catch (error) {
+                // Logged even when superseded (see the layout path above).
                 this.logSearchError(error);
+                if (sequence !== this.searchSequence) return;
                 // The request failed, so show the error state — not the empty
                 // state, which would tell the reader the archive has nothing on
                 // their topic. The empty state was hidden before the request.
@@ -1501,8 +1516,15 @@ import Typesense from 'typesense';
             }
 
             const safeTerm = this.escapeHtmlAttr(term);
-            const label = this.escapeHtmlAttr(this.t('didYouMeanLabel'))
-                .replace('{q}', `<strong class="${CSS_PREFIX}-did-you-mean-term">${safeTerm}</strong>`);
+            // The translation is publisher config, not markup: its own text is
+            // escaped and only the wrapper around the term is HTML. Splitting on
+            // the placeholder — rather than escaping the whole string and then
+            // substituting into it — keeps that contract obvious, and is the
+            // same in all three layouts.
+            const label = this.t('didYouMeanLabel')
+                .split('{q}')
+                .map(part => this.escapeHtmlAttr(part))
+                .join(`<strong class="${CSS_PREFIX}-did-you-mean-term">${safeTerm}</strong>`);
 
             this.didYouMeanState.innerHTML =
                 `<button type="button" class="${CSS_PREFIX}-did-you-mean-btn" data-search="${safeTerm}">${label}</button>`;

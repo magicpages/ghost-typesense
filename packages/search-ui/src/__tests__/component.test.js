@@ -824,3 +824,161 @@ describe('did you mean', () => {
     expect(el.activeLayout.renderError).not.toHaveBeenCalled();
   });
 });
+
+// Two searches can be in flight at once — the 80ms debounce narrows the window
+// but does not close it. Whichever request returns last used to win the surface,
+// so a slow early query could repaint over the results of the query the reader
+// is actually looking at.
+describe('superseded searches', () => {
+  const HIDDEN = 'mp-search-hidden';
+
+  const hit = {
+    document: { id: 'p1', title: 'Composting', url: 'https://x/p/', excerpt: 'How to', published_at: 1700000000000 }
+  };
+
+  // A backend whose per-query responses resolve when the test says so.
+  const deferredClient = (responders) => ({
+    collections: () => ({
+      documents: () => ({
+        search: (params) => responders[params.q]()
+      })
+    })
+  });
+
+  const deferred = () => {
+    let settle;
+    const promise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+    return { promise, ...settle };
+  };
+
+  it('does not let an earlier empty response wipe the newer query\'s results', async () => {
+    const slow = deferred();
+    const el = mountWithConfig();
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    expect(el.hitsList.innerHTML).toContain('Composting');
+
+    slow.resolve({ found: 0, hits: [] });
+    await first;
+
+    expect(el.hitsList.classList.contains(HIDDEN)).toBe(false);
+    expect(el.hitsList.innerHTML).toContain('Composting');
+    expect(el.emptyState.classList.contains(HIDDEN)).toBe(true);
+  });
+
+  it('does not let an earlier failure raise the error state over newer results', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const slow = deferred();
+    const el = mountWithConfig();
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+
+    slow.reject(new Error('timeout'));
+    await first;
+
+    expect(el.errorState.classList.contains(HIDDEN)).toBe(true);
+    expect(el.hitsList.innerHTML).toContain('Composting');
+    // The failure is still logged — a broken connection is worth a trace even
+    // when its query has been typed past.
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
+  it('attributes clicks and analytics to the query actually on screen', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    global.fetch = fetchMock;
+    const slow = deferred();
+    const el = mountWithConfig({ analytics: { endpoint: 'https://e/queries', siteId: 's' } });
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    slow.resolve({ found: 4, hits: [hit] });
+    await first;
+
+    expect(el.lastQuery).toBe('composting');
+    const queries = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).q);
+    expect(queries).not.toContain('compost');
+  });
+
+  it('keeps the same guard on the alternative-layout path', async () => {
+    const slow = deferred();
+    const el = mountWithConfig({ uiStyle: 'discovery' });
+    el.activeLayout = {
+      renderLoading: vi.fn(),
+      renderEmpty: vi.fn(),
+      renderError: vi.fn(),
+      renderResults: vi.fn(),
+      renderFacets: vi.fn()
+    };
+    el.typesenseClient = deferredClient({
+      compost: () => slow.promise,
+      composting: () => Promise.resolve({ found: 1, hits: [hit] })
+    });
+
+    const first = el.handleSearch('compost');
+    await el.handleSearch('composting');
+    slow.resolve({ found: 0, hits: [] });
+    await first;
+
+    expect(el.activeLayout.renderResults).toHaveBeenCalledTimes(1);
+    expect(el.activeLayout.renderEmpty).not.toHaveBeenCalled();
+  });
+});
+
+// The prompt's wording is a translation from the site's own config. Its text is
+// escaped like any other string; only the wrapper around the suggested term is
+// markup — the same contract in all three layouts.
+describe('did-you-mean label contract', () => {
+  const matching = (...tokens) => ({
+    document: { id: 'p1', title: 'Composting', url: 'https://x/p/', excerpt: 'e', published_at: 1700000000000 },
+    highlight: { title: { matched_tokens: tokens, snippet: '' } }
+  });
+
+  const clientTolerating = (typoHits) => ({
+    collections: () => ({
+      documents: () => ({
+        search: async (params) => {
+          const hits = Number(params.num_typos) > 0 ? typoHits : [];
+          return { found: hits.length, hits };
+        }
+      })
+    })
+  });
+
+  it('substitutes {q} in a translated label', async () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, didYouMeanLabel: 'Meintest du {q}?' };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    const button = el.didYouMeanState.querySelector('.mp-search-did-you-mean-btn');
+    expect(button.textContent).toBe('Meintest du composting?');
+    expect(button.querySelector('.mp-search-did-you-mean-term').textContent).toBe('composting');
+  });
+
+  it('renders a label containing markup as text, never as markup', async () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, didYouMeanLabel: '<img src=x onerror=alert(1)> {q}?' };
+    el.typesenseClient = clientTolerating([matching('composting')]);
+
+    await el.handleSearch('compsting');
+
+    expect(el.didYouMeanState.querySelector('img')).toBeNull();
+    expect(el.didYouMeanState.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});

@@ -138,7 +138,7 @@ Picking it runs the corrected search. Clicking works everywhere; in the palette 
 
 The suggested word comes from the `matched_tokens` the retry returned, so it is always a word your posts actually contain — never a guess from a dictionary that doesn't know your archive. Words are only replaced within the typo budget Typesense itself would allow for their length (nothing under four characters, one typo up to six, two beyond), and a query whose words are all in the index is left alone rather than being offered back unchanged.
 
-The retry is skipped entirely when your `typesenseSearchParams` already set a non-zero `num_typos` — you are searching leniently already, so the first request was the lenient one. So strict-matching sites pay one extra request, and only on a genuine miss; lenient ones pay none. If the retry fails or finds nothing, the reader simply keeps the ordinary empty state.
+The retry is skipped entirely when your `typesenseSearchParams` already sets a non-zero `num_typos` — you are searching leniently already, so the first request was the lenient one. So strict-matching sites pay one extra request, and only on a genuine miss; lenient ones pay none. If the retry fails or finds nothing, the reader simply keeps the ordinary empty state.
 
 Turn it off with:
 
@@ -149,7 +149,7 @@ window.__MP_SEARCH_CONFIG__ = {
 };
 ```
 
-The prompt's wording is translatable via `didYouMeanLabel` (see [Internationalization](#internationalization-i18n)).
+The prompt's wording is translatable via `didYouMeanLabel`, where `{q}` marks where the suggested term goes (see [Internationalization](#internationalization-i18n)). The string is rendered as text — markup in a translation shows up literally rather than being parsed.
 
 ### Search Fields Configuration
 
