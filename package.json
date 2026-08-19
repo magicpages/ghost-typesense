@@ -21,7 +21,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "@types/node": "^20.11.17",
+    "@types/node": "^26.2.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "dotenv": "^16.4.7",
