@@ -193,6 +193,7 @@ export function mockSearchResponse(params = {}) {
   const q = (params.q || '').trim();
   // Arrives as a query-string value, so it is a string on the wire.
   const numTypos = Number(params.num_typos) || 0;
+  const maxFacetValues = Number(params.max_facet_values) || 0;
   const filters = parseFilterBy(params.filter_by);
   const facetBy = (params.facet_by || '').split(',').map((f) => f.trim()).filter(Boolean);
 
@@ -234,11 +235,16 @@ export function mockSearchResponse(params = {}) {
       const values = field === 'tags.name' ? post.tags : [].concat(post[field] || []);
       for (const value of values) counts[value] = (counts[value] || 0) + 1;
     }
+    const ordered = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([value, count]) => ({ value, count, highlighted: value }));
+
     return {
       field_name: field,
-      counts: Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([value, count]) => ({ value, count, highlighted: value }))
+      // Honour the widget's cap the way Typesense does — values are ordered by
+      // count descending and the tail is dropped — so the playground shows the
+      // real truncation behaviour rather than an always-complete list.
+      counts: maxFacetValues > 0 ? ordered.slice(0, maxFacetValues) : ordered
     };
   });
 

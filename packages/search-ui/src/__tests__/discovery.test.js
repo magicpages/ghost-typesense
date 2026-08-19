@@ -243,3 +243,104 @@ describe('discovery did-you-mean label contract', () => {
     expect(button.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 });
+
+// The rail rendered every value the response carried, so a facet's configured
+// limit never reached it and a cut list looked like a complete one. The core
+// owns the cap and reports the truncation; the rail renders both.
+describe('discovery facet truncation', () => {
+  const countsFor = (n) =>
+    Array.from({ length: n }, (_, i) => ({ value: `Tag ${i + 1}`, count: n - i }));
+
+  const facetCounts = (counts) => [{ field_name: 'tags.name', counts }];
+
+  // Stands in for the core's facet bookkeeping: a display cap of `limit`, and
+  // the truncation flags it derives from the response.
+  function mountWithCap(limit, { expanded = false } = {}) {
+    const ctx = makeCtx();
+    ctx.getFacetRows = vi.fn((field, counts) => ({
+      rows: counts.slice(0, limit),
+      truncated: counts.length > limit,
+      expanded
+    }));
+    ctx.getSelectedFacets = () => ({});
+    ctx.toggleFacet = vi.fn();
+    ctx.expandFacet = vi.fn();
+    ctx.collapseFacet = vi.fn();
+    ctx.requery = vi.fn();
+    ctx.close = vi.fn();
+    ctx.trackClick = vi.fn();
+
+    const layout = createDiscoveryLayout(ctx);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountedHosts.push(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = layout.buildMarkup();
+    layout.cacheElements(shadow);
+    return { layout, shadow, ctx };
+  }
+
+  it('shows the capped list and says the rest exists', () => {
+    const { layout, shadow } = mountWithCap(3);
+    layout.renderFacets(facetCounts(countsFor(11)), {});
+
+    const chips = shadow.querySelectorAll('.mp-search-discovery-facet-chip');
+    expect(chips).toHaveLength(3);
+
+    const more = shadow.querySelector('.mp-search-discovery-facet-more');
+    expect(more.textContent).toContain('facetShowMoreLabel');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(shadow.getElementById(more.getAttribute('aria-controls'))).not.toBeNull();
+  });
+
+  it('stays silent when the whole list fits', () => {
+    const { layout, shadow } = mountWithCap(5);
+    layout.renderFacets(facetCounts(countsFor(4)), {});
+
+    expect(shadow.querySelectorAll('.mp-search-discovery-facet-chip')).toHaveLength(4);
+    expect(shadow.querySelector('.mp-search-discovery-facet-more')).toBeNull();
+  });
+
+  it('asks the core for a wider list and re-runs the query', () => {
+    const { layout, shadow, ctx } = mountWithCap(3);
+    layout.bindEvents();
+    layout.renderFacets(facetCounts(countsFor(11)), {});
+
+    shadow.querySelector('.mp-search-discovery-facet-more').click();
+
+    expect(ctx.expandFacet).toHaveBeenCalledWith('tags.name');
+    expect(ctx.requery).toHaveBeenCalled();
+  });
+
+  it('collapses again from the expanded state', () => {
+    const { layout, shadow, ctx } = mountWithCap(11, { expanded: true });
+    layout.bindEvents();
+    layout.renderFacets(facetCounts(countsFor(11)), {});
+
+    const more = shadow.querySelector('.mp-search-discovery-facet-more');
+    expect(more.textContent).toContain('facetShowLessLabel');
+    more.click();
+
+    expect(ctx.collapseFacet).toHaveBeenCalledWith('tags.name');
+    expect(ctx.expandFacet).not.toHaveBeenCalled();
+  });
+
+  it('keeps a selected value that ranks below the cap, so it can be cleared', () => {
+    const { layout, shadow } = mountWithCap(3);
+    layout.renderFacets(facetCounts(countsFor(11)), { 'tags.name': new Set(['Tag 9']) });
+
+    const values = [...shadow.querySelectorAll('.mp-search-discovery-facet-chip')]
+      .map((c) => c.dataset.facetValue);
+    expect(values).toContain('Tag 9');
+  });
+
+  it('renders every returned value against a core that predates the cap', () => {
+    // Layout chunks are fetched separately from the core, so a newer chunk can
+    // meet an older core; it then behaves as this layout did before.
+    const { layout, shadow } = mountDiscovery();
+    layout.renderFacets(facetCounts(countsFor(11)), {});
+
+    expect(shadow.querySelectorAll('.mp-search-discovery-facet-chip')).toHaveLength(11);
+    expect(shadow.querySelector('.mp-search-discovery-facet-more')).toBeNull();
+  });
+});

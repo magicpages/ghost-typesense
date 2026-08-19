@@ -367,14 +367,21 @@ window.__MP_SEARCH_CONFIG__ = {
 |-----|------|----------|-------------|
 | `field` | `String` | Yes | A faceted collection field (e.g. `tags.name`, `authors`) |
 | `label` | `String` | No | Heading shown above the field's chips (defaults to the field name) |
-| `limit` | `Number` | No | Maximum number of values shown for the field (defaults to 10) |
+| `limit` | `Number` | No | How many values the field shows before "Show more" (defaults to 10) |
 
 Behaviour:
 
 - When a query is active, each configured field renders as a row of selectable chips with a live result count. Chips are `<button>` elements with `aria-pressed`, so they are keyboard-focusable and toggle with Enter/Space.
 - Selecting one or more values filters the results and refreshes the counts. Values within a field are OR-ed; different fields are AND-ed together.
-- Selections can be cleared individually (toggling a chip off) or all at once via the **Clear filters** button.
+- Selections can be cleared individually (toggling a chip off) or all at once via the **Clear filters** button. A selected value stays on screen even when it ranks below the display limit, so the chip that switched a filter on is always the one that switches it off.
+- When a field has more values than its `limit`, a **Show more** control appears beneath its chips and **Show less** collapses it again. Without it, a value that exists on the current results but ranks below the cap simply vanishes, which reads as "this topic doesn't exist" rather than "this list is abridged".
 - A publisher-provided `typesenseSearchParams.filter_by` is **preserved**: facet selections are AND-ed with it rather than overwriting it.
+
+**How truncation is detected.** Each search asks Typesense for one more value than the longest facet list will show (`max_facet_values`), and that extra value is never rendered — its presence is what distinguishes a cut list from a complete one, without the cost of asking for a total. Expanding a field raises its cap by 40 and re-runs the current query, so the wider list costs one request and only when a reader asks for it. Both controls are translatable (`facetShowMoreLabel`, `facetShowLessLabel`).
+
+Typesense's `max_facet_values` is a single global parameter, so it is sized by the largest facet. A field with a smaller `limit` therefore receives more values than it shows — which is exactly what lets it detect its own truncation from the same response.
+
+The **palette** layout is unaffected: its Tags and Authors groups are query shortcuts capped at six rows by the layout itself, not the configurable filter rail.
 
 ## Members-only results
 
@@ -571,6 +578,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `ariaModalLabel` | "Search" | ARIA label for modal |
 | `ariaFacetsLabel` | "Filters" | ARIA label for the facet filter group |
 | `clearFiltersLabel` | "Clear filters" | Label for the button that clears active facet filters |
+| `facetShowMoreLabel` | "Show more" | Control shown under a facet whose value list was cut short |
+| `facetShowLessLabel` | "Show less" | Collapses an expanded facet back to its configured limit |
 | `membersLabel` | "Members only" | Badge text on gated (members-only / paid) results |
 | `ariaMembersLabel` | "Members-only content" | ARIA label for the members-only badge |
 | `untitledPost` | "Untitled" | Fallback for posts without titles |

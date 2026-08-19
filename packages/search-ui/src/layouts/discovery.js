@@ -240,10 +240,19 @@ export default function createDiscoveryLayout(ctx) {
       // narrowed the set to where it no longer appears can still be cleared).
       if (fcCounts.length === 0 && selectedSet.size === 0) continue;
 
+      // The core owns the display cap (a facet's configured `limit`, or the
+      // raised cap once the reader expands it) and reports whether the response
+      // held more values than that. An older core without those helpers renders
+      // every returned value, as this layout did before.
+      const capped = typeof ctx.getFacetRows === 'function'
+        ? ctx.getFacetRows(group.field, fcCounts)
+        : null;
+      const visible = capped ? capped.rows : fcCounts;
+
       // Merge selected values missing from the live counts.
       const seen = new Set();
       const rows = [];
-      for (const c of fcCounts) {
+      for (const c of visible) {
         seen.add(c.value);
         rows.push({ value: c.value, count: c.count });
       }
@@ -266,10 +275,23 @@ export default function createDiscoveryLayout(ctx) {
         })
         .join('');
 
+      // A cut list says so, and offers the rest — otherwise a topic that exists
+      // on the current results but ranks below the cap reads as one that does
+      // not exist at all.
+      const chipsId = `${P}-discovery-facet-chips-${groupsHtml.length}`;
+      const toggle = capped && (capped.truncated || capped.expanded)
+        ? `<button type="button" class="${P}-discovery-facet-more" `
+          + `data-facet-field="${esc(group.field)}" `
+          + `data-facet-expand="${capped.truncated ? 'more' : 'less'}" `
+          + `aria-controls="${chipsId}" aria-expanded="${capped.expanded ? 'true' : 'false'}">`
+          + `${esc(ctx.t(capped.truncated ? 'facetShowMoreLabel' : 'facetShowLessLabel'))}</button>`
+        : '';
+
       groupsHtml.push(
         `<div class="${P}-facet-group ${P}-discovery-facet-group">`
         + `<p class="${P}-discovery-facet-title">${esc(group.label)}</p>`
-        + `<div class="${P}-facet-chips" role="group" aria-label="${esc(group.label)}">${chips}</div>`
+        + `<div id="${chipsId}" class="${P}-facet-chips" role="group" aria-label="${esc(group.label)}">${chips}</div>`
+        + toggle
         + `</div>`
       );
     }
@@ -409,6 +431,19 @@ export default function createDiscoveryLayout(ctx) {
             ctx.requery();
             return;
           }
+          const more = e.target.closest(`.${P}-discovery-facet-more`);
+          if (more) {
+            e.preventDefault();
+            const field = more.dataset.facetField;
+            if (!field) return;
+            if (more.dataset.facetExpand === 'less') ctx.collapseFacet(field);
+            else ctx.expandFacet(field);
+            // The wider (or narrower) list comes from the response, so the core
+            // re-runs the active query for it.
+            ctx.requery();
+            return;
+          }
+
           const chip = e.target.closest(`.${P}-facet-chip`);
           if (!chip) return;
           e.preventDefault();
