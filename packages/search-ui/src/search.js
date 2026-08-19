@@ -1800,10 +1800,25 @@ import Typesense from 'typesense';
 
             if (selected && selected.size) {
                 const shown = new Set(visible.map(c => c.value));
+
+                // Ranked below the cap but still in the response: keep its real
+                // count.
                 for (const entry of counts.slice(cap)) {
                     if (selected.has(entry.value) && !shown.has(entry.value)) {
                         visible.push(entry);
                         shown.add(entry.value);
+                    }
+                }
+
+                // Ranked below what was even requested, so the response does not
+                // carry it at all — the field asks for one value past the cap,
+                // not for everything. Shown with a zero count, as the discovery
+                // rail already does, because a chip the reader switched on has
+                // to stay switchable off.
+                for (const value of selected) {
+                    if (!shown.has(value)) {
+                        visible.push({ value, count: 0 });
+                        shown.add(value);
                     }
                 }
             }
@@ -1854,7 +1869,14 @@ import Typesense from 'typesense';
         renderFacets(facetCounts) {
             if (!this.facetsContainer) return;
 
-            if (!this.config.facets?.length || !Array.isArray(facetCounts) || facetCounts.length === 0) {
+            // An active selection keeps the rail on screen even when the
+            // response carried no counts at all: hiding it would take the
+            // "clear filters" control with it, stranding the reader in a filter
+            // they can no longer see, let alone undo.
+            const hasSelection = Object.values(this.selectedFacets).some(s => s && s.size > 0);
+            const hasCounts = Array.isArray(facetCounts) && facetCounts.length > 0;
+
+            if (!this.config.facets?.length || (!hasCounts && !hasSelection)) {
                 this.facetsContainer.innerHTML = '';
                 this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
                 return;
@@ -1862,16 +1884,20 @@ import Typesense from 'typesense';
 
             // Map configured fields to their display labels and order.
             const countsByField = {};
-            for (const fc of facetCounts) {
+            for (const fc of (hasCounts ? facetCounts : [])) {
                 countsByField[fc.field_name] = fc.counts || [];
             }
 
             const groups = this.config.facets.map((facet, groupIndex) => {
                 const counts = countsByField[facet.field] || [];
-                if (counts.length === 0) return '';
+                const selected = this.selectedFacets[facet.field];
+                // A field with an active selection renders even when the
+                // response carried no counts for it — a query that its own
+                // filter narrowed to nothing would otherwise take the chip away
+                // along with the only way to undo it.
+                if (counts.length === 0 && !(selected && selected.size)) return '';
 
                 const { rows, truncated, expanded } = this.facetRows(facet, counts);
-                const selected = this.selectedFacets[facet.field];
                 const chips = rows.map(({ value, count }) => {
                     const isSelected = selected ? selected.has(value) : false;
                     const safeValue = this.escapeHtmlAttr(value);
@@ -1911,7 +1937,6 @@ import Typesense from 'typesense';
                 `;
             }).join('');
 
-            const hasSelection = Object.values(this.selectedFacets).some(s => s && s.size > 0);
             const clearButton = hasSelection
                 ? `<button type="button" class="${CSS_PREFIX}-facet-clear">${this.t('clearFiltersLabel')}</button>`
                 : '';

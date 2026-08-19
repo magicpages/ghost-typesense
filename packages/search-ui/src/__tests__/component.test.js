@@ -1101,7 +1101,7 @@ describe('facet truncation', () => {
     expect(el.getSearchParameters().max_facet_values).toBe(4);
   });
 
-  it('keeps a selected value visible even when it ranks below the cap', () => {
+  it('keeps a selected value the response ranked below the cap', () => {
     // Otherwise the only way out of that filter is Clear filters — the chip
     // that switched it on would have vanished.
     const el = mountWithConfig(facetConfig(3));
@@ -1112,6 +1112,48 @@ describe('facet truncation', () => {
     expect(values).toContain('Tag 9');
     expect(values.slice(0, 3)).toEqual(['Tag 1', 'Tag 2', 'Tag 3']);
     expect([...chips].find(c => c.dataset.facetValue === 'Tag 9').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps a selected value the response left out altogether', () => {
+    // The request asks for one value past the cap, not for everything, so a
+    // selected value ranked below that is simply not in the response. It still
+    // has to be on screen, with a zero count, or it cannot be switched off.
+    const el = mountWithConfig(facetConfig(3));
+    el.selectedFacets = { 'tags.name': new Set(['Tag 9']) };
+    const { chips } = render(el, countsFor(4));
+
+    const tag9 = chips.find(c => c.dataset.facetValue === 'Tag 9');
+    expect(tag9).toBeDefined();
+    expect(tag9.getAttribute('aria-pressed')).toBe('true');
+    expect(tag9.querySelector('.mp-search-facet-chip-count').textContent).toBe('0');
+  });
+
+  it('renders a selected field whose counts came back empty', () => {
+    // A filter can narrow the results to nothing. Suppressing the group then
+    // takes away the chip that caused it — and, with it, the way back.
+    const el = mountWithConfig(facetConfig(3));
+    el.selectedFacets = { 'tags.name': new Set(['Tag 9']) };
+    const { chips, more } = render(el, []);
+
+    expect(chips.map(c => c.dataset.facetValue)).toEqual(['Tag 9']);
+    expect(more).toBeNull();
+    expect(el.facetsContainer.classList.contains('mp-search-hidden')).toBe(false);
+  });
+
+  it('keeps the clear-filters control reachable when the response carried no facets at all', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.selectedFacets = { 'tags.name': new Set(['Tag 9']) };
+
+    el.renderFacets([]);
+
+    expect(el.facetsContainer.classList.contains('mp-search-hidden')).toBe(false);
+    expect(el.facetsContainer.querySelector('.mp-search-facet-clear')).not.toBeNull();
+  });
+
+  it('still hides the rail when there are no counts and nothing selected', () => {
+    const el = mountWithConfig(facetConfig(3));
+    el.renderFacets([]);
+    expect(el.facetsContainer.classList.contains('mp-search-hidden')).toBe(true);
   });
 
   it('falls back to the default limit for a missing or nonsensical one', () => {
