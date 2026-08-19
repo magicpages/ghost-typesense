@@ -44,7 +44,7 @@ describe('CLI Commands', () => {
 
   describe('init command', () => {
     it('should initialize collection with config', async () => {
-      const initCommand = program
+      program
         .command('init')
         .option('-c, --config <path>', 'Path to config file')
         .action(async () => {
@@ -52,7 +52,7 @@ describe('CLI Commands', () => {
           await manager.initializeCollection();
         });
 
-      await initCommand.parseAsync(['node', 'test', 'init', '--config', 'test.json']);
+      await program.parseAsync(['node', 'test', 'init', '--config', 'test.json']);
       
       expect(GhostTypesenseManager).toHaveBeenCalled();
       const mockManager = (GhostTypesenseManager as unknown as Mock).mock.results[0]?.value;
@@ -62,7 +62,7 @@ describe('CLI Commands', () => {
 
   describe('sync command', () => {
     it('should sync posts with config', async () => {
-      const syncCommand = program
+      program
         .command('sync')
         .option('-c, --config <path>', 'Path to config file')
         .action(async () => {
@@ -70,7 +70,7 @@ describe('CLI Commands', () => {
           await manager.indexAllPosts();
         });
 
-      await syncCommand.parseAsync(['node', 'test', 'sync', '--config', 'test.json']);
+      await program.parseAsync(['node', 'test', 'sync', '--config', 'test.json']);
       
       expect(GhostTypesenseManager).toHaveBeenCalled();
       const mockManager = (GhostTypesenseManager as unknown as Mock).mock.results[0]?.value;
@@ -80,7 +80,7 @@ describe('CLI Commands', () => {
 
   describe('clear command', () => {
     it('should clear collection with config', async () => {
-      const clearCommand = program
+      program
         .command('clear')
         .option('-c, --config <path>', 'Path to config file')
         .action(async () => {
@@ -88,7 +88,7 @@ describe('CLI Commands', () => {
           await manager.clearCollection();
         });
 
-      await clearCommand.parseAsync(['node', 'test', 'clear', '--config', 'test.json']);
+      await program.parseAsync(['node', 'test', 'clear', '--config', 'test.json']);
       
       expect(GhostTypesenseManager).toHaveBeenCalled();
       const mockManager = (GhostTypesenseManager as unknown as Mock).mock.results[0]?.value;
