@@ -115,6 +115,37 @@ export default function createPaletteLayout(ctx) {
     if (refs.status) refs.status.textContent = text;
   }
 
+  function renderFilterBar() {
+    if (!refs.filters) return;
+    const sel = ctx.getSelectedFacets();
+    const pills = [];
+    for (const [field, set] of Object.entries(sel)) {
+      if (!(set instanceof Set) || set.size === 0) continue;
+      const sigil = field.indexOf('tag') !== -1 ? '#' : '@';
+      for (const value of set) {
+        pills.push(
+          `<button type="button" class="${L}-filter-pill" `
+          + `data-field="${ctx.escapeHtmlAttr(field)}" `
+          + `data-value="${ctx.escapeHtmlAttr(value)}">`
+          + `<span class="${L}-filter-sigil">${sigil}</span>`
+          + `<span>${ctx.escapeHtmlAttr(value)}</span>`
+          + `<span class="${L}-filter-x" aria-hidden="true">×</span>`
+          + `</button>`
+        );
+      }
+    }
+    if (pills.length === 0) {
+      refs.filters.innerHTML = '';
+      refs.filters.classList.add(`${P}-hidden`);
+      return;
+    }
+    const clearAll = pills.length > 1
+      ? `<button type="button" class="${L}-filter-clear">${ctx.t('clearFiltersLabel')}</button>`
+      : '';
+    refs.filters.innerHTML = pills.join('') + clearAll;
+    refs.filters.classList.remove(`${P}-hidden`);
+  }
+
   // --- Active-row management ---
   function applyActive() {
     if (!refs.results) return;
@@ -177,17 +208,23 @@ export default function createPaletteLayout(ctx) {
     setActive(i);
   }
 
-  // Activate the row at index. newTab opens posts in a new tab. Posts navigate
-  // (after a click-track + recent push); recent/tag/author/suggest rows refine
-  // the query by typing their value back into the input.
+  // Activate the row at index. newTab opens posts in a new tab. Posts
+  // navigate; tag/author rows toggle a facet filter and re-query (matching
+  // the discovery layout's pill behaviour); recent/suggest rows refine.
   function activate(index, newTab) {
     const item = flatItems[index];
     if (!item) return;
 
-    if (item.kind === 'recent' || item.kind === 'tag' || item.kind === 'author' ||
-        item.kind === 'suggest') {
-      // Ignore malformed rows so we never type the literal "undefined" into the
-      // input or issue a query for it.
+    if ((item.kind === 'tag' || item.kind === 'author') && item.field) {
+      const value = item.value;
+      if (typeof value !== 'string' || value.trim() === '') return;
+      ctx.toggleFacet(item.field, value);
+      renderFilterBar();
+      ctx.requery();
+      return;
+    }
+
+    if (item.kind === 'recent' || item.kind === 'suggest') {
       const value = item.value;
       if (typeof value !== 'string' || value.trim() === '') return;
       if (refs.input) {
@@ -278,15 +315,21 @@ export default function createPaletteLayout(ctx) {
       </a>`;
   }
 
-  function facetRowHtml(kind, sigil, value, count) {
-    flatItems.push({ kind, value: String(value) });
+  function facetRowHtml(kind, sigil, value, count, field) {
+    flatItems.push({ kind, value: String(value), field });
     const idx = flatItems.length - 1;
+    const sel = ctx.getSelectedFacets();
+    const isActive = sel[field] instanceof Set && sel[field].has(String(value));
+    const activeClass = isActive ? ` ${L}-row-filter-active` : '';
     return `
-      <div class="${L}-row ${L}-row-${kind}" id="${L}-row-${idx}"
+      <div class="${L}-row ${L}-row-${kind}${activeClass}" id="${L}-row-${idx}"
            role="option" aria-selected="false" data-index="${idx}">
         <span class="${L}-row-icon ${L}-row-icon-sigil" aria-hidden="true">${ctx.escapeHtmlAttr(sigil)}</span>
-        <span class="${L}-row-title">${ctx.escapeHtmlAttr(value)}</span>
-        <span class="${L}-row-meta"><span class="${L}-meta-count">${ctx.escapeHtmlAttr(String(count))}</span></span>
+        <span class="${L}-row-title">${ctx.escapeHtmlAttr(String(value))}</span>
+        <span class="${L}-row-meta">
+          <span class="${L}-meta-count">${ctx.escapeHtmlAttr(String(count))}</span>
+          <span class="${L}-meta-filter">${isActive ? '✓' : ctx.t('paletteFilterAction')}</span>
+        </span>
       </div>`;
   }
 
@@ -355,7 +398,12 @@ export default function createPaletteLayout(ctx) {
         activate(activeIndex, e.metaKey || e.ctrlKey);
         return true;
       default:
-        return false;
+        // When the search input has focus, consume ALL keys so
+        // stopPropagation fires and the event doesn't leak past the
+        // shadow boundary. Without this, the retargeted event's target
+        // is the host element (not an input), so theme JS or browser
+        // defaults (spacebar → page scroll) misinterpret the keypress.
+        return e.target === refs.input;
     }
   }
 
@@ -393,7 +441,7 @@ export default function createPaletteLayout(ctx) {
     if (tagFacet && Array.isArray(tagFacet.counts) && tagFacet.counts.length) {
       const rows = tagFacet.counts
         .slice(0, FACET_LIMIT)
-        .map((c) => facetRowHtml('tag', '#', c.value, c.count));
+        .map((c) => facetRowHtml('tag', '#', c.value, c.count, tagFacet.field_name));
       sections.push(`
         <div class="${L}-group" role="group" aria-label="${ctx.t('paletteTagsGroup')}">
           <div class="${L}-group-label">${ctx.t('paletteTagsGroup')}</div>
@@ -406,7 +454,7 @@ export default function createPaletteLayout(ctx) {
     if (authorFacet && Array.isArray(authorFacet.counts) && authorFacet.counts.length) {
       const rows = authorFacet.counts
         .slice(0, FACET_LIMIT)
-        .map((c) => facetRowHtml('author', '@', c.value, c.count));
+        .map((c) => facetRowHtml('author', '@', c.value, c.count, authorFacet.field_name));
       sections.push(`
         <div class="${L}-group" role="group" aria-label="${ctx.t('paletteAuthorsGroup')}">
           <div class="${L}-group-label">${ctx.t('paletteAuthorsGroup')}</div>
@@ -417,6 +465,7 @@ export default function createPaletteLayout(ctx) {
     refs.results.innerHTML = sections.join('');
     activeIndex = 0;
     applyActive();
+    renderFilterBar();
     setStatus(pluralResults(currentModel.length));
   }
 
@@ -449,6 +498,8 @@ export default function createPaletteLayout(ctx) {
                      aria-label="${ctx.t('ariaSearchLabel')}" />
               <kbd class="${P}-kbd ${L}-esc-hint">esc</kbd>
             </div>
+            <div class="${L}-filters ${P}-hidden" role="group"
+                 aria-label="Active filters"></div>
             <div id="${L}-listbox" class="${L}-results" role="listbox" tabindex="-1"
                  aria-label="${ctx.t('ariaResultsLabel')}"></div>
             <div class="${L}-footer">
@@ -477,6 +528,7 @@ export default function createPaletteLayout(ctx) {
       refs.backdrop = root.querySelector(`.${L}-backdrop`);
       refs.input = root.querySelector(`.${L}-input`);
       refs.results = root.getElementById(`${L}-listbox`);
+      refs.filters = root.querySelector(`.${L}-filters`);
       refs.status = root.querySelector(`.${L}-status`);
       // Exposed for parity with the core's expectations.
       this.input = refs.input;
@@ -494,6 +546,25 @@ export default function createPaletteLayout(ctx) {
           currentQuery = value;
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => ctx.search(value), DEBOUNCE_MS);
+        });
+      }
+
+      // Filter bar: click a pill to remove that filter, "Clear all" to reset.
+      if (refs.filters) {
+        refs.filters.addEventListener('click', (e) => {
+          const clear = e.target.closest(`.${L}-filter-clear`);
+          if (clear) {
+            ctx.clearFacets();
+            renderFilterBar();
+            ctx.requery();
+            return;
+          }
+          const pill = e.target.closest(`.${L}-filter-pill`);
+          if (pill) {
+            ctx.toggleFacet(pill.dataset.field, pill.dataset.value);
+            renderFilterBar();
+            ctx.requery();
+          }
         });
       }
 
@@ -517,8 +588,9 @@ export default function createPaletteLayout(ctx) {
           ctx.trackClick(link.dataset.resultId, Number.isNaN(position) ? null : position);
         }, true);
 
-        // Selection click handling for every row kind (recent/tag/author rows
-        // refine; posts let the anchor navigate after the capture-phase track).
+        // Selection click handling for every row kind. Posts are real
+        // anchors — let the browser navigate (modifier-aware). All other
+        // rows (recent, tag, author, suggest) are activated in-place.
         refs.results.addEventListener('click', (e) => {
           const rowEl = e.target.closest(`.${L}-row`);
           if (!rowEl) return;
@@ -527,9 +599,6 @@ export default function createPaletteLayout(ctx) {
           const item = flatItems[index];
           activeIndex = index;
           applyActive();
-          // Posts are real anchors — let the browser navigate (modifier-aware)
-          // rather than calling window.location, so middle-click / cmd-click
-          // keep their native behaviour and analytics already fired above.
           if (item && item.kind === 'post') {
             pushRecent(currentQuery);
             return;
@@ -559,6 +628,8 @@ export default function createPaletteLayout(ctx) {
       currentSuggestion = null;
       flatItems = [];
       activeIndex = 0;
+      ctx.clearFacets();
+      renderFilterBar();
     },
 
     focusInput() {
