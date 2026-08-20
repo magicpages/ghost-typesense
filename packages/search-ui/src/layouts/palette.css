@@ -167,6 +167,63 @@
   flex: 0 0 auto;
 }
 
+/* Active-filter bar — compact pills between searchbar and results */
+.mp-search-palette .mp-search-palette-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(0.375 * var(--mp-rem));
+  padding: calc(0.5 * var(--mp-rem)) calc(0.875 * var(--mp-rem));
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.mp-search-palette .mp-search-palette-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.25 * var(--mp-rem));
+  padding: calc(0.125 * var(--mp-rem)) calc(0.5 * var(--mp-rem));
+  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+  border-radius: calc(1 * var(--mp-rem));
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  color: var(--color-text);
+  font-size: calc(0.8125 * var(--mp-rem));
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.mp-search-palette .mp-search-palette-filter-pill:hover {
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
+}
+
+.mp-search-palette .mp-search-palette-filter-sigil {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.mp-search-palette .mp-search-palette-filter-x {
+  color: var(--color-text-secondary);
+  font-size: calc(0.875 * var(--mp-rem));
+  margin-left: calc(0.125 * var(--mp-rem));
+}
+
+.mp-search-palette .mp-search-palette-filter-clear {
+  padding: calc(0.125 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
+  border: none;
+  border-radius: calc(0.5 * var(--mp-rem));
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: calc(0.75 * var(--mp-rem));
+  cursor: pointer;
+  transition: color var(--transition-base);
+}
+
+.mp-search-palette .mp-search-palette-filter-clear:hover {
+  color: var(--color-text);
+}
+
 /* Results scroll region */
 .mp-search-palette .mp-search-palette-results {
   flex: 1 1 auto;
@@ -317,6 +374,27 @@
   font-weight: 600;
   color: var(--color-text);
   opacity: 0.7;
+}
+
+/* "Filter" action label on tag/author rows */
+.mp-search-palette .mp-search-palette-meta-filter {
+  padding: calc(0.0625 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
+  border-radius: calc(0.5 * var(--mp-rem));
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+  font-size: calc(0.6875 * var(--mp-rem));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mp-search-palette .mp-search-palette-row-filter-active {
+  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 25%, transparent);
+}
+
+.mp-search-palette .mp-search-palette-row-filter-active .mp-search-palette-meta-filter {
+  background: var(--accent-color);
+  color: white;
 }
 
 /* Members badge — accent tint (mirrors the modal's gated badge intent) */
