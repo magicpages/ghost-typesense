@@ -73,9 +73,50 @@ function mockTypesense() {
   };
 }
 
+/**
+ * Stand in for Ghost's member session endpoint, so the widget's reader-aware
+ * badges can be exercised without a Ghost install. The playground's "Signed-in
+ * reader" control sets a `pg_reader` cookie; this answers the way Ghost does —
+ * 204 for a signed-out reader, a member payload otherwise — and 404s when asked
+ * to behave like a site that has no member endpoint at all.
+ */
+function mockGhostMember() {
+  const PAYLOADS = {
+    free: { uuid: 'pg-free', email: 'free@example.com', status: 'free', paid: false, subscriptions: [] },
+    paid: { uuid: 'pg-paid', email: 'paid@example.com', status: 'paid', paid: true, subscriptions: [] }
+  };
+
+  return {
+    name: 'mock-ghost-member',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!/^\/members\/api\/member\/?(\?|$)/.test(req.url ?? '')) return next();
+
+        const cookie = /(?:^|;\s*)pg_reader=([^;]*)/.exec(req.headers.cookie ?? '');
+        const reader = cookie ? decodeURIComponent(cookie[1]) : 'anonymous';
+
+        res.setHeader('Cache-Control', 'no-store');
+        if (reader === 'none') {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        if (!PAYLOADS[reader]) {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(PAYLOADS[reader]));
+      });
+    }
+  };
+}
+
 export default defineConfig({
   root: __dirname,
-  plugins: [serveSearchBundle(), mockTypesense()],
+  plugins: [serveSearchBundle(), mockTypesense(), mockGhostMember()],
   server: {
     port: 5174,
     open: true,

@@ -67,8 +67,28 @@
         "optional": true
       },
       {
+        "name": "tags.name",
+        "type": "string[]",
+        "index": true,
+        "facet": true,
+        "optional": true
+      },
+      {
+        "name": "tags.slug",
+        "type": "string[]",
+        "index": true,
+        "facet": true,
+        "optional": true
+      },
+      {
         "name": "authors",
         "type": "string[]",
+        "facet": true,
+        "optional": true
+      },
+      {
+        "name": "visibility",
+        "type": "string",
         "facet": true,
         "optional": true
       }

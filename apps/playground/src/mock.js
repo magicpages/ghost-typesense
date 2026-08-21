@@ -81,6 +81,20 @@ export const POSTS = [
     tags: ['Ghost', 'Design'],
     authors: ['Sam'],
     visibility: 'paid'
+  },
+  {
+    id: 'post-7',
+    title: 'Founding member workshop: designing a Ghost theme',
+    slug: 'founding-member-workshop',
+    url: 'https://demo.example.com/founding-member-workshop/',
+    excerpt: 'A workshop recording for readers on the founding tier.',
+    plaintext: 'TIERS_BODY: handlebars partials, routing, and a full theme walkthrough.',
+    published_at: 1694000000000,
+    tags: ['Design'],
+    authors: ['Jannis'],
+    // Ghost reports tier-restricted posts as 'tiers', and only ever paid tiers,
+    // so the widget badges them as paid.
+    visibility: 'tiers'
   }
 ];
 

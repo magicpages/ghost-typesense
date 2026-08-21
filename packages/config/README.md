@@ -72,9 +72,17 @@ The package includes default fields optimized for Ghost content, including:
 
 // Optional fields
 { name: 'feature_image', type: 'string', optional: true }
-{ name: 'tags', type: 'string[]', optional: true }
-{ name: 'authors', type: 'string[]', optional: true }
+{ name: 'tags', type: 'string[]', facet: true, optional: true }
+{ name: 'tags.name', type: 'string[]', index: true, facet: true, optional: true }
+{ name: 'tags.slug', type: 'string[]', index: true, facet: true, optional: true }
+{ name: 'authors', type: 'string[]', facet: true, optional: true }
+{ name: 'visibility', type: 'string', facet: true, optional: true }
 ```
+
+Only the **required** fields are backfilled into a config that supplies its own
+`fields` array. If you replace the list, carry over any optional field you still
+want — `visibility` in particular, which the search UI reads to tell a
+free-member post from a paid one.
 
 ## Types
 

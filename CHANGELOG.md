@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-21
+
+### Added
+- **Search results now say *which* gate a post is behind.** Every non-public
+  result carried the same "Members only" badge, which is wrong on more than half
+  of them: Ghost gates a post either to anyone who signed up or to paying
+  readers only, and a free subscriber is a member as far as they are concerned.
+  They clicked, and they hit a paywall. Results are now badged **Members** for
+  `visibility: members` and **Paid members** for `paid` and `tiers` — the latter
+  because Ghost only ever tier-restricts to paid tiers, so tier-gated content is
+  never reachable on a free account. The free badge stays quiet and the paid one
+  carries the site's accent colour in all three layouts, so the two read as a
+  pair rather than as one badge with two spellings. Both are translatable:
+  `paidLabel` / `ariaPaidLabel` join the existing `membersLabel` /
+  `ariaMembersLabel`, and the discovery preview's notice gains a
+  `discoveryPaidNotice` variant, so a publisher who calls paying readers
+  something of their own can say so. No reindex is needed — the exact
+  `visibility` was already on the indexed documents; only the widget was
+  throwing it away.
+- **`memberAwareBadges` — badge only what the reader cannot open.** Naming the
+  gate helps, but a free subscriber still has to read the badge to work out that
+  a post is not for them. With this opt-in flag the widget asks Ghost who is
+  reading (one same-origin request to `/members/api/member` when it initialises)
+  and drops the badge from anything that reader can already open: `members`
+  posts for any signed-in reader, `paid` posts for a paying one. A `tiers` post
+  keeps its badge even then, because it names specific paid tiers and the index
+  does not record which — an unverifiable promise of access is worse than a
+  redundant badge. Off by default, since the widget is also embedded on sites
+  with no Ghost member endpoint to ask. Every failure — endpoint missing, reader
+  offline, response not yet back — leaves the badges exactly as they are without
+  the flag, so nothing is ever wrongly unbadged.
+- **`data-gated` in every layout.** The `mp-search-result-gated` class and
+  `data-gated="<visibility>"` attribute are documented as the way to style a
+  gated result or route its click into a membership flow, but only the modal
+  layout actually emitted them; a site on the palette or discovery layout had
+  nothing to hook. Both now appear on the palette row, the discovery card, and
+  the discovery "Read post" link, so
+  `[data-gated="paid"], [data-gated="tiers"]` selects the paid gate whichever
+  layout is in use. They are independent of the badge: when
+  `memberAwareBadges` suppresses a badge, the gate stays on the element.
+
+### Changed
+- **`membersLabel` now defaults to "Members", not "Members only".** It is no
+  longer the label for every gate, so a name that reads as "and nothing more"
+  was misleading next to the new paid badge. An existing `membersLabel` override
+  keeps working and now applies only to `visibility: members`; sites that had
+  overridden it to cover all gated posts will want to set `paidLabel` too.
+
+### Fixed
+- The modal's gated badge interpolated its ARIA label into an attribute without
+  escaping it, unlike the same badge in the palette and discovery layouts. All
+  three now go through the escaper, so a translation containing markup or a
+  quote renders as text.
+- `example.config.json` supplied an explicit `fields` array that omitted
+  `visibility`, `tags.name`, and `tags.slug`. Only *required* fields are
+  backfilled into a config that brings its own field list, so anyone starting
+  from the example got a collection where those three were undeclared — and
+  `visibility`, which the badges read, was not facetable. The example now lists
+  them, and `@magicpages/ghost-typesense-config`'s README documents the
+  backfill rule instead of a stale field list.
+
 ## [2.2.0] - 2026-08-19
 
 ### Added

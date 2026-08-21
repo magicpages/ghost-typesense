@@ -56,11 +56,26 @@ export default function createDiscoveryLayout(ctx) {
     ];
   }
 
-  // The gated members badge, mirroring the shared modal markup. Both strings
-  // come through ctx.t so they stay translatable.
-  function gatedBadge() {
-    return `<span class="${P}-gated-badge" aria-label="${esc(ctx.t('ariaMembersLabel'))}">`
-      + `<span aria-hidden="true">🔒</span> ${esc(ctx.t('membersLabel'))}</span>`;
+  // The gated badge, mirroring the shared modal markup. `access` is the core's
+  // accessLevel value ('members' or 'paid'); both labels come through ctx.t so
+  // they stay translatable.
+  function gatedBadge(access) {
+    const isPaid = access === 'paid';
+    const label = esc(ctx.t(isPaid ? 'paidLabel' : 'membersLabel'));
+    const ariaLabel = esc(ctx.t(isPaid ? 'ariaPaidLabel' : 'ariaMembersLabel'));
+    return `<span class="${P}-gated-badge ${P}-gated-badge-${access}" aria-label="${ariaLabel}">`
+      + `<span aria-hidden="true">🔒</span> ${label}</span>`;
+  }
+
+  // The raw Ghost visibility, exposed on the card and the read-post link so a
+  // theme can style a gate or route the click to a membership flow — the same
+  // contract the modal layout offers.
+  function gatedClass(m) {
+    return m.isGated ? ` ${P}-result-gated` : '';
+  }
+
+  function gatedAttr(m) {
+    return m.isGated ? ` data-gated="${esc(m.visibility)}"` : '';
   }
 
   // The spelling-correction prompt offered under the empty message. Both halves
@@ -178,7 +193,7 @@ export default function createDiscoveryLayout(ctx) {
     }
     const dateStr = formatDate(m.publishedAt);
     if (dateStr) byline.push(`<span>${esc(dateStr)}</span>`);
-    if (m.isGated) byline.push(gatedBadge());
+    if (m.showBadge) byline.push(gatedBadge(m.access));
     if (byline.length) {
       parts.push(
         `<div class="${P}-discovery-preview-byline">`
@@ -188,10 +203,13 @@ export default function createDiscoveryLayout(ctx) {
     }
 
     // Gated notice — never render a protected body; only the teaser/excerpt is
-    // present in the index for non-public posts.
+    // present in the index for non-public posts. Shown for every gated post,
+    // reader or not: it explains why the preview is short, which is a property
+    // of the indexed document rather than of who is reading.
     if (m.isGated) {
+      const notice = ctx.t(m.access === 'paid' ? 'discoveryPaidNotice' : 'discoveryGatedNotice');
       parts.push(
-        `<div class="${P}-discovery-gated-notice" role="note">${esc(ctx.t('discoveryGatedNotice'))}</div>`
+        `<div class="${P}-discovery-gated-notice" role="note">${esc(notice)}</div>`
       );
     }
 
@@ -212,8 +230,8 @@ export default function createDiscoveryLayout(ctx) {
     // delegated click handler (bindEvents) emits the click analytics event.
     if (m.url && m.url !== '#') {
       parts.push(
-        `<a href="${esc(m.url)}" class="${P}-result-link ${P}-discovery-open" `
-        + `data-result-id="${esc(m.id)}" data-result-position="${m.position}" rel="noopener">`
+        `<a href="${esc(m.url)}" class="${P}-result-link ${P}-discovery-open${gatedClass(m)}" `
+        + `data-result-id="${esc(m.id)}" data-result-position="${m.position}"${gatedAttr(m)} rel="noopener">`
         + `${esc(ctx.t('readPostLabel'))} <span aria-hidden="true">→</span></a>`
       );
     }
@@ -601,13 +619,13 @@ export default function createDiscoveryLayout(ctx) {
           }
           const dateStr = formatDate(m.publishedAt);
           if (dateStr) metaParts.push(`<span>${esc(dateStr)}</span>`);
-          if (m.isGated) metaParts.push(gatedBadge());
+          if (m.showBadge) metaParts.push(gatedBadge(m.access));
           const metaHtml = metaParts.join(`<span class="${P}-discovery-dot" aria-hidden="true">·</span>`);
 
           return (
-            `<div class="${P}-discovery-card" id="${P}-discovery-opt-${m.position}" role="option" `
+            `<div class="${P}-discovery-card${gatedClass(m)}" id="${P}-discovery-opt-${m.position}" role="option" `
             + `aria-selected="false" data-index="${m.position}" `
-            + `data-result-id="${esc(m.id)}" data-result-position="${m.position}" `
+            + `data-result-id="${esc(m.id)}" data-result-position="${m.position}"${gatedAttr(m)} `
             + `aria-label="${m.ariaTitle}">`
             + `<p class="${P}-discovery-card-title">${m.titleHtml}</p>`
             + (m.excerptHtml ? `<p class="${P}-discovery-card-excerpt">${m.excerptHtml}</p>` : '')
