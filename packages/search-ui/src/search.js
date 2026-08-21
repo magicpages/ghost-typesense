@@ -732,7 +732,7 @@ import Typesense from 'typesense';
                 collapseFacet: (field) => this.collapseFacet(field),
                 setFacetFilter: () => {},
                 search: (q) => this.handleSearch(q),
-                requery: () => this.rerunQueryForFacets(),
+                requery: () => this.rerunQuery(),
                 trackSearch: (q, c) => this.trackSearch(q, c),
                 trackClick: (id, pos) => this.trackClick(id, pos),
                 emitClick: (id, pos) => this.trackClick(id, pos),
@@ -2068,7 +2068,7 @@ import Typesense from 'typesense';
                 if (clearBtn) {
                     e.preventDefault();
                     this.selectedFacets = {};
-                    this.rerunQueryForFacets();
+                    this.rerunQuery();
                     return;
                 }
 
@@ -2081,7 +2081,7 @@ import Typesense from 'typesense';
                     else this.expandFacet(field);
                     // The wider (or narrower) list comes from the response, so
                     // the current query is re-run for it.
-                    this.rerunQueryForFacets();
+                    this.rerunQuery();
                     return;
                 }
 
@@ -2103,13 +2103,15 @@ import Typesense from 'typesense';
                     set.add(value);
                 }
 
-                this.rerunQueryForFacets();
+                this.rerunQuery();
             });
         }
 
-        // Re-run the active query after a facet change, using the live input
-        // value (falling back to the last searched query).
-        rerunQueryForFacets() {
+        // Re-run the active query, using the live input value (falling back to
+        // the last searched query). Called when something the results depend on
+        // changes underneath them — a facet selection, or the reader's own
+        // membership arriving after a render.
+        rerunQuery() {
             const query = this.searchInput?.value?.trim() || this.lastQuery;
             if (query) {
                 this.handleSearch(query);
@@ -2153,9 +2155,11 @@ import Typesense from 'typesense';
         // other outcome — the flag off, a site without the endpoint, an offline
         // reader — leaves 'unknown', which badges everything.
         //
-        // Deliberately never awaited by a render path: badges reflect whatever
-        // has resolved by the time a query is typed, and the request is fired at
-        // init so that is almost always the real answer.
+        // Deliberately never awaited by a render path, so search latency never
+        // depends on it. The request is fired at init, so by the time a reader
+        // has opened search and typed it has almost always landed; if it has
+        // not, results render badged for an unknown reader and the query is
+        // re-run once when the answer arrives.
         resolveReaderAccess() {
             if (!this.config.memberAwareBadges) return Promise.resolve('unknown');
             if (this.readerAccessPromise) return this.readerAccessPromise;
@@ -2174,6 +2178,14 @@ import Typesense from 'typesense';
                 .catch(() => 'unknown')
                 .then((access) => {
                     this.readerAccess = access;
+                    // Anything already rendered was badged for an unknown
+                    // reader. Only a signed-in reader changes any of those
+                    // badges — 'anonymous' and 'unknown' badge identically — so
+                    // only then is a re-render worth a request. At init there is
+                    // nothing on screen and rerunQuery is a no-op, which is the
+                    // usual case: the lookup lands long before a reader has
+                    // opened search and typed.
+                    if (access === 'free' || access === 'paid') this.rerunQuery();
                     return access;
                 });
 

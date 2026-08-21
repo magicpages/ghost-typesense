@@ -1585,6 +1585,40 @@ describe('reader membership lookup', () => {
     expect(global.fetch.mock.calls[0][0]).toBe('/blog/members/api/member');
   });
 
+  // The lookup is fired at init and never awaited, so a fast reader on a slow
+  // connection can get results badged for an unknown reader. Re-running the
+  // query when the answer lands is what stops that badge sticking around.
+  it('re-runs the query when a signed-in reader resolves after a render', async () => {
+    let settle;
+    global.fetch = vi.fn(() => new Promise((resolve) => { settle = resolve; }));
+    const el = mountWithConfig({ memberAwareBadges: true });
+    el.rerunQuery = vi.fn();
+    el.searchInput.value = 'composting';
+
+    const pending = el.resolveReaderAccess();
+    // Rendered while still unknown: every gate keeps its badge.
+    expect(el.needsBadge('members')).toBe(true);
+    expect(el.rerunQuery).not.toHaveBeenCalled();
+
+    settle({ status: 200, ok: true, json: () => Promise.resolve({ status: 'free', paid: false }) });
+    await pending;
+
+    expect(el.needsBadge('members')).toBe(false);
+    expect(el.rerunQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // Most traffic is signed out, and a signed-out reader is badged exactly like
+  // an unresolved one — so re-running would cost a request and change nothing.
+  it('does not re-run for a signed-out reader', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({ memberAwareBadges: true });
+    el.rerunQuery = vi.fn();
+
+    await el.resolveReaderAccess();
+
+    expect(el.rerunQuery).not.toHaveBeenCalled();
+  });
+
   it('asks once per page, however often it is called', async () => {
     global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
     const el = mountWithConfig({ memberAwareBadges: true });

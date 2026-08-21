@@ -92,8 +92,18 @@ function mockGhostMember() {
       server.middlewares.use((req, res, next) => {
         if (!/^\/members\/api\/member\/?(\?|$)/.test(req.url ?? '')) return next();
 
+        // decodeURIComponent throws URIError on malformed percent-encoding, which
+        // would take the middleware down before it answers. A cookie we cannot
+        // read is a reader we cannot identify, so fall back to signed out.
         const cookie = /(?:^|;\s*)pg_reader=([^;]*)/.exec(req.headers.cookie ?? '');
-        const reader = cookie ? decodeURIComponent(cookie[1]) : 'anonymous';
+        let reader = 'anonymous';
+        if (cookie) {
+          try {
+            reader = decodeURIComponent(cookie[1]);
+          } catch {
+            reader = 'anonymous';
+          }
+        }
 
         res.setHeader('Cache-Control', 'no-store');
         if (reader === 'none') {

@@ -35,9 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redundant badge. Off by default, since the widget is also embedded on sites
   with no Ghost member endpoint to ask. Every failure — endpoint missing, reader
   offline, response not yet back — leaves the badges exactly as they are without
-  the flag, so nothing is ever wrongly unbadged. The path is configurable via
-  `memberEndpoint`: the default assumes Ghost sits at the origin root, and a
-  subdirectory install or a path-rewriting proxy needs its own prefix.
+  the flag, so nothing is ever wrongly unbadged. The lookup is fired when the
+  widget initialises and never awaited, so it costs no search latency; a fast
+  reader on a slow connection who gets results before it lands sees them badged
+  for an unknown reader, and the query is re-run once when the answer arrives.
+  The path is configurable via `memberEndpoint`: the default assumes Ghost sits
+  at the origin root, and a subdirectory install or a path-rewriting proxy needs
+  its own prefix.
 - **`data-gated` in every layout.** The `mp-search-result-gated` class and
   `data-gated="<visibility>"` attribute are documented as the way to style a
   gated result or route its click into a membership flow, but only the modal
