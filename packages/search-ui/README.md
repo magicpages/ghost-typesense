@@ -98,6 +98,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `semanticAlpha` | `Number` | No | `0.2` | Vector weight in hybrid rank fusion when `semanticSearch` is on; lower favours keyword matches (see [Keeping hybrid results relevant](#keeping-hybrid-results-relevant)) |
 | `semanticDistanceThreshold` | `Number` | No | `0.8` | Drop vector matches whose cosine distance exceeds this when `semanticSearch` is on; lower is stricter |
 | `facets` | `Array` | No | `[]` | Reader-facing filter controls for faceted fields (see [Filters](#filters)) |
+| `memberAwareBadges` | `Boolean` | No | `false` | Ask Ghost who is reading, and drop the gated badge from posts this reader can already open (see [Gated results](#gated-results)) |
+| `memberEndpoint` | `String` | No | `'/members/api/member'` | Path of Ghost's member-session endpoint, for a subdirectory install or a path-rewriting proxy |
 | `uiStyle` | `String` | No | `'modal'` | Overall layout: `'modal'`, `'palette'`, or `'discovery'` (see [UI layouts](#ui-layouts)) |
 | `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
@@ -400,13 +402,62 @@ Typesense's `max_facet_values` is a single global parameter, so it is sized by t
 
 The **palette** layout is unaffected: its Tags and Authors groups are query shortcuts capped at six rows by the layout itself, not the configurable filter rail.
 
-## Members-only results
+## Gated results
 
-When the index includes gated (members-only / paid) posts — see [indexing members-only content](../../README.md#members-only-content) on the indexing side — the widget marks those results with a small **"members only"** badge. No widget configuration is needed; it keys off the `visibility` field on each result and requests that field automatically.
+When the index includes gated posts — see [indexing members-only content](../../README.md#members-only-content) on the indexing side — the widget badges them. Ghost gates a post two ways, and the badge says which:
 
-Gated results carry a `mp-search-result-gated` class and a `data-gated="<visibility>"` attribute on the result link, so you can style them or wire clicks to a membership/upsell flow with your own theme code. The badge text is translatable via the `membersLabel` / `ariaMembersLabel` keys (see [Internationalization](#internationalization-i18n)).
+| Ghost `visibility` | Badge | Meaning |
+| --- | --- | --- |
+| `public` | none | anyone can read it |
+| `members` | **Members** | any signed-up reader, free included |
+| `paid` | **Paid members** | paying readers only |
+| `tiers` | **Paid members** | specific paid tiers only |
+
+`tiers` badges as paid because Ghost only ever tier-restricts to *paid* tiers — tier-gated content is never reachable on a free account.
+
+No configuration is needed. The widget keys off the `visibility` field on each result and requests that field automatically.
+
+Both labels are translatable — `membersLabel` / `ariaMembersLabel` and `paidLabel` / `ariaPaidLabel` (see [Internationalization](#internationalization-i18n)) — so if you call your paying readers something else, say so:
+
+```js
+i18n: {
+  membersLabel: 'Subscribers',
+  paidLabel: 'Supporters',
+  ariaPaidLabel: 'Content for supporters only'
+}
+```
+
+Gated results carry a `mp-search-result-gated` class and a `data-gated="<visibility>"` attribute on the result element in every layout, so you can style them or wire clicks to a membership/upsell flow with your own theme code:
+
+```css
+.mp-search-result-gated[data-gated="paid"],
+.mp-search-result-gated[data-gated="tiers"] { /* the paid gate */ }
+```
 
 Because gated posts are indexed as redacted documents (excerpt/preview only), there is no protected body text in the results to expose.
+
+### Badging only what the reader cannot open
+
+A free subscriber is a "member" as far as they are concerned, so a badge that just says *members* still sends them to posts they cannot read. Set `memberAwareBadges: true` and the widget asks Ghost who is reading — one same-origin request to `/members/api/member` when it initialises — and drops the badge from anything that reader can already open:
+
+| Post | signed out | free member | paying member |
+| --- | --- | --- | --- |
+| `members` | badge | — | — |
+| `paid` | badge | badge | — |
+| `tiers` | badge | badge | badge |
+
+A `tiers` post keeps its badge even for a paying reader: it names specific paid tiers, and the index does not record which, so the widget will not promise access it cannot verify.
+
+It is **off by default**. Turn it on only on a Ghost site — anywhere else the endpoint does not exist. Every failure (endpoint missing, reader offline, response not yet back) leaves the badges exactly as they are without it, so nothing is ever wrongly unbadged. `data-gated` is unaffected: the gate stays on the element for your theme code whether or not the badge is shown.
+
+The default path assumes Ghost is served from the origin root. On a subdirectory install, or behind a proxy that rewrites paths, point `memberEndpoint` at the right place:
+
+```js
+memberAwareBadges: true,
+memberEndpoint: '/blog/members/api/member'
+```
+
+Keep it same-origin. The lookup is sent with `credentials: 'same-origin'`, so a cross-origin URL arrives without the reader's Ghost session cookie and every reader looks signed out.
 
 ## Semantic search
 
@@ -597,8 +648,10 @@ window.__MP_SEARCH_CONFIG__ = {
 | `clearFiltersLabel` | "Clear filters" | Label for the button that clears active facet filters |
 | `facetShowMoreLabel` | "Show more" | Control shown under a facet whose value list was cut short |
 | `facetShowLessLabel` | "Show less" | Collapses an expanded facet back to its configured limit |
-| `membersLabel` | "Members only" | Badge text on gated (members-only / paid) results |
-| `ariaMembersLabel` | "Members-only content" | ARIA label for the members-only badge |
+| `membersLabel` | "Members" | Badge text on posts open to any signed-up reader |
+| `ariaMembersLabel` | "Members-only content" | ARIA label for that badge |
+| `paidLabel` | "Paid members" | Badge text on paid and tier-restricted posts |
+| `ariaPaidLabel` | "Paid-members-only content" | ARIA label for that badge |
 | `untitledPost` | "Untitled" | Fallback for posts without titles |
 | `relativeNow` / `relativeMinutes` / `relativeHours` / `relativeDays` / `relativeMonths` / `relativeYears` | "just now" / "{n}m ago" / … | Relative dates in result rows (`{n}` is substituted) |
 

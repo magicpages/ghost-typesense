@@ -55,6 +55,8 @@ function modelWith(featureImage) {
       ariaTitle: 'A post',
       excerptHtml: 'Body teaser',
       isGated: false,
+      access: 'public',
+      showBadge: false,
       visibility: 'public',
       featureImage,
       tags: ['Gardening'],
@@ -342,5 +344,111 @@ describe('discovery facet truncation', () => {
 
     expect(shadow.querySelectorAll('.mp-search-discovery-facet-chip')).toHaveLength(11);
     expect(shadow.querySelector('.mp-search-discovery-facet-more')).toBeNull();
+  });
+});
+
+// Ghost gates a post two ways — anyone signed up, or paying readers only — and
+// the discovery rail has to tell them apart in both the card list and the
+// preview pane.
+describe('discovery gated results', () => {
+  // Mirrors what normalizeHit hands the layout. `showBadge` is the core's
+  // per-reader decision; `access` is the gate itself.
+  function gatedModel({ visibility, access, showBadge = true }) {
+    return [
+      {
+        id: 'p1',
+        position: 0,
+        url: '/post/',
+        title: 'A post',
+        titleHtml: 'A post',
+        ariaTitle: 'A post',
+        excerptHtml: 'Body teaser',
+        isGated: true,
+        access,
+        showBadge,
+        visibility,
+        featureImage: null,
+        tags: ['Gardening'],
+        authors: ['Ada Lovelace'],
+        publishedAt: 1700000000000
+      }
+    ];
+  }
+
+  // makeCtx().t echoes the key, so the keys themselves are the assertion.
+  it('labels a free-member card distinctly from a paid one', () => {
+    const free = mountDiscovery();
+    free.layout.renderResults(gatedModel({ visibility: 'members', access: 'members' }), { found: 1 });
+    const freeBadge = free.shadow
+      .getElementById('mp-search-discovery-results')
+      .querySelector('.mp-search-gated-badge');
+    expect(freeBadge.classList.contains('mp-search-gated-badge-members')).toBe(true);
+    expect(freeBadge.textContent).toContain('membersLabel');
+
+    const paid = mountDiscovery();
+    paid.layout.renderResults(gatedModel({ visibility: 'paid', access: 'paid' }), { found: 1 });
+    const paidBadge = paid.shadow
+      .getElementById('mp-search-discovery-results')
+      .querySelector('.mp-search-gated-badge');
+    expect(paidBadge.classList.contains('mp-search-gated-badge-paid')).toBe(true);
+    expect(paidBadge.textContent).toContain('paidLabel');
+    expect(paidBadge.getAttribute('aria-label')).toBe('ariaPaidLabel');
+  });
+
+  it('badges the preview byline with the same gate', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(gatedModel({ visibility: 'tiers', access: 'paid' }), { found: 1 });
+
+    const byline = shadow.querySelector('.mp-search-discovery-preview-byline');
+    expect(byline.querySelector('.mp-search-gated-badge-paid')).not.toBeNull();
+  });
+
+  it('matches the preview notice wording to the gate', () => {
+    const free = mountDiscovery();
+    free.layout.renderResults(gatedModel({ visibility: 'members', access: 'members' }), { found: 1 });
+    expect(free.shadow.querySelector('.mp-search-discovery-gated-notice').textContent)
+      .toBe('discoveryGatedNotice');
+
+    const paid = mountDiscovery();
+    paid.layout.renderResults(gatedModel({ visibility: 'paid', access: 'paid' }), { found: 1 });
+    expect(paid.shadow.querySelector('.mp-search-discovery-gated-notice').textContent)
+      .toBe('discoveryPaidNotice');
+  });
+
+  // The notice explains why the preview is only a teaser, which is a property of
+  // the indexed document — true whether or not this reader can open the post.
+  it('keeps the notice for a reader who no longer needs the badge', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(
+      gatedModel({ visibility: 'members', access: 'members', showBadge: false }),
+      { found: 1 }
+    );
+
+    expect(shadow.querySelector('.mp-search-discovery-gated-notice')).not.toBeNull();
+    expect(shadow.querySelector('.mp-search-gated-badge')).toBeNull();
+  });
+
+  // Same contract the modal layout offers, so theme code can style a gate or
+  // route the click to a membership flow whichever layout is in use.
+  it('exposes the raw visibility on the card and the read-post link', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(gatedModel({ visibility: 'tiers', access: 'paid' }), { found: 1 });
+
+    const card = shadow.querySelector('.mp-search-discovery-card');
+    expect(card.getAttribute('data-gated')).toBe('tiers');
+    expect(card.classList.contains('mp-search-result-gated')).toBe(true);
+
+    const open = shadow.querySelector('.mp-search-discovery-open');
+    expect(open.getAttribute('data-gated')).toBe('tiers');
+    expect(open.classList.contains('mp-search-result-gated')).toBe(true);
+  });
+
+  it('leaves a public result unbadged and unmarked', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1 });
+
+    expect(shadow.querySelector('.mp-search-gated-badge')).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-gated-notice')).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-card').hasAttribute('data-gated')).toBe(false);
   });
 });

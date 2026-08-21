@@ -218,6 +218,11 @@ import Typesense from 'typesense';
     const DEFAULT_FACET_LIMIT = 10;
     const FACET_EXPANSION_STEP = 40;
 
+    // Ghost's own member-session endpoint, relative to the origin root. A
+    // subdirectory install or a path-rewriting proxy overrides it via
+    // `memberEndpoint`.
+    const DEFAULT_MEMBER_ENDPOINT = '/members/api/member';
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -271,6 +276,13 @@ import Typesense from 'typesense';
             this.fetchedSuggestions = [];
             this.suggestionsFetched = false;
 
+            // The reader's own access level, resolved once from Ghost (see
+            // resolveReaderAccess). 'unknown' until it lands — and permanently
+            // when the lookup is off or unavailable — which badges every gated
+            // result, the behaviour of a widget that never asked.
+            this.readerAccess = 'unknown';
+            this.readerAccessPromise = null;
+
             // Default English translations
             this.defaultI18n = {
                 searchPlaceholder: 'Search for anything',
@@ -299,8 +311,14 @@ import Typesense from 'typesense';
                 // control that collapses it again.
                 facetShowMoreLabel: 'Show more',
                 facetShowLessLabel: 'Show less',
-                membersLabel: 'Members only',
+                // Gated-result badges. Ghost has two kinds of gate — anyone
+                // signed up, and paying readers only — so each gets its own
+                // label, overridable by publishers who use their own words for
+                // a paying reader ('supporters', 'patrons', …).
+                membersLabel: 'Members',
                 ariaMembersLabel: 'Members-only content',
+                paidLabel: 'Paid members',
+                ariaPaidLabel: 'Paid-members-only content',
                 untitledPost: 'Untitled',
 
                 // Relative dates for the refined result rows. {n} is substituted.
@@ -350,7 +368,8 @@ import Typesense from 'typesense';
                 discoveryEmptyTitle: 'Search the archive',
                 discoveryEmptyHint: 'Start typing to explore posts. Use ↑ ↓ to move and ↵ to open.',
                 discoveryNoFilters: 'No filters available.',
-                discoveryGatedNotice: 'This post is available to members. Only the public teaser is shown here.'
+                discoveryGatedNotice: 'This post is available to members. Only the public teaser is shown here.',
+                discoveryPaidNotice: 'This post is available to paid members. Only the public teaser is shown here.'
             };
         }
 
@@ -392,7 +411,19 @@ import Typesense from 'typesense';
                 // Overall UI layout: 'modal' (default, the built-in centered
                 // modal) or an alternative layout loaded on demand ('palette',
                 // 'discovery'). Unknown values fall back to 'modal'.
-                uiStyle: ALT_LAYOUTS.includes(defaultConfig.uiStyle) ? defaultConfig.uiStyle : 'modal'
+                uiStyle: ALT_LAYOUTS.includes(defaultConfig.uiStyle) ? defaultConfig.uiStyle : 'modal',
+                // Opt in to reading the reader's own membership from Ghost, so a
+                // badge is only shown for content they actually cannot open.
+                // Off by default: the widget is also embedded on sites that have
+                // no Ghost member endpoint to ask.
+                memberAwareBadges: defaultConfig.memberAwareBadges === true,
+                // Where that lookup goes. The default is Ghost's own path at the
+                // origin root; a subdirectory install or a path-rewriting proxy
+                // needs its own prefix, or the lookup 404s and every gated
+                // result keeps its badge.
+                memberEndpoint: typeof defaultConfig.memberEndpoint === 'string' && defaultConfig.memberEndpoint.trim()
+                    ? defaultConfig.memberEndpoint.trim()
+                    : DEFAULT_MEMBER_ENDPOINT
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -407,6 +438,12 @@ import Typesense from 'typesense';
 
             // Store locale for future use
             this.locale = this.config.locale || 'en';
+
+            // Start the membership lookup now rather than on first search, so it
+            // has almost certainly landed by the time a reader types. Nothing
+            // waits on it: until it resolves, gated results simply keep their
+            // badge.
+            this.resolveReaderAccess();
 
             // init() is async (an alternative layout lazily loads its chunk);
             // expose the promise so openModal can wait for the surface to be
@@ -652,6 +689,11 @@ import Typesense from 'typesense';
                 ariaTitle: this.escapeHtmlAttr(String(titleHtml).replace(/<[^>]*>/g, '')),
                 excerptHtml,
                 isGated,
+                // Which gate this result sits behind, and whether this reader
+                // still needs telling about it. Resolved here so no layout has
+                // to reimplement the rule.
+                access: this.accessLevel(doc.visibility),
+                showBadge: this.needsBadge(doc.visibility),
                 visibility: doc.visibility || 'public',
                 featureImage: doc.feature_image || null,
                 tags: Array.isArray(doc.tags) ? doc.tags : [],
@@ -690,7 +732,7 @@ import Typesense from 'typesense';
                 collapseFacet: (field) => this.collapseFacet(field),
                 setFacetFilter: () => {},
                 search: (q) => this.handleSearch(q),
-                requery: () => this.rerunQueryForFacets(),
+                requery: () => this.rerunQuery(),
                 trackSearch: (q, c) => this.trackSearch(q, c),
                 trackClick: (id, pos) => this.trackClick(id, pos),
                 emitClick: (id, pos) => this.trackClick(id, pos),
@@ -1424,9 +1466,14 @@ import Typesense from 'typesense';
                         : (hit.document.url || '#');
 
                     // A non-public (members-only / paid) result, surfaced via
-                    // the redacted index documents. Flagged so it can be styled
-                    // and routed to a membership flow.
+                    // the redacted index documents. The raw visibility stays on
+                    // the link so a theme can style it or route the click to a
+                    // membership flow; `badgeAccess` is the narrower question of
+                    // what to show this reader.
                     const isGated = !!hit.document.visibility && hit.document.visibility !== 'public';
+                    const badgeAccess = this.needsBadge(hit.document.visibility)
+                        ? this.accessLevel(hit.document.visibility)
+                        : null;
 
                     // The link wrapper (class + data attributes + aria-label) is
                     // shared by both templates, so keyboard navigation, click
@@ -1440,8 +1487,8 @@ import Typesense from 'typesense';
                             ${isGated ? `data-gated="${this.escapeHtmlAttr(hit.document.visibility)}"` : ''}
                             aria-label="${title.replace(/<[^>]*>/g, '')}">
                             ${this.config.template === 'grid'
-                                ? this.renderGridCard(hit, title, excerpt, isGated)
-                                : this.renderListItem(hit, title, excerpt, isGated)}
+                                ? this.renderGridCard(hit, title, excerpt, badgeAccess)
+                                : this.renderListItem(hit, title, excerpt, badgeAccess)}
                         </a>
                     `;
                 }).join('');
@@ -2021,7 +2068,7 @@ import Typesense from 'typesense';
                 if (clearBtn) {
                     e.preventDefault();
                     this.selectedFacets = {};
-                    this.rerunQueryForFacets();
+                    this.rerunQuery();
                     return;
                 }
 
@@ -2034,7 +2081,7 @@ import Typesense from 'typesense';
                     else this.expandFacet(field);
                     // The wider (or narrower) list comes from the response, so
                     // the current query is re-run for it.
-                    this.rerunQueryForFacets();
+                    this.rerunQuery();
                     return;
                 }
 
@@ -2056,24 +2103,104 @@ import Typesense from 'typesense';
                     set.add(value);
                 }
 
-                this.rerunQueryForFacets();
+                this.rerunQuery();
             });
         }
 
-        // Re-run the active query after a facet change, using the live input
-        // value (falling back to the last searched query).
-        rerunQueryForFacets() {
+        // Re-run the active query, using the live input value (falling back to
+        // the last searched query). Called when something the results depend on
+        // changes underneath them — a facet selection, or the reader's own
+        // membership arriving after a render.
+        rerunQuery() {
             const query = this.searchInput?.value?.trim() || this.lastQuery;
             if (query) {
                 this.handleSearch(query);
             }
         }
 
-        // A small lock badge shown on gated (members-only / paid) results.
-        gatedBadge(isGated) {
-            if (!isGated) return '';
-            return `<span class="${CSS_PREFIX}-gated-badge" aria-label="${this.t('ariaMembersLabel')}">
-                        <span aria-hidden="true">🔒</span> ${this.t('membersLabel')}
+        // Ghost's post visibility, reduced to the gate a reader runs into:
+        // 'public' (none), 'members' (any signed-up reader), or 'paid'.
+        //
+        // 'tiers' counts as paid. Ghost filters a tiers post's tier list down to
+        // paid tiers when it serialises the post, so tier-gated content is never
+        // reachable on a free account. Anything else unrecognised falls back to
+        // 'members', which is the weaker of the two claims.
+        accessLevel(visibility) {
+            const value = visibility || 'public';
+            if (value === 'public') return 'public';
+            if (value === 'paid' || value === 'tiers') return 'paid';
+            return 'members';
+        }
+
+        // Whether this reader still needs the badge on a gated result.
+        //
+        // Only suppressed where access is certain: a signed-in reader of any
+        // kind can open a members post, and a paying reader can open a paid
+        // one. A 'tiers' post names specific paid tiers that the index does not
+        // record, so it stays badged even for a paying reader rather than
+        // promising access we cannot verify.
+        needsBadge(visibility) {
+            const access = this.accessLevel(visibility);
+            if (access === 'public') return false;
+
+            const signedIn = this.readerAccess === 'free' || this.readerAccess === 'paid';
+            if (signedIn && access === 'members') return false;
+            if (this.readerAccess === 'paid' && visibility === 'paid') return false;
+            return true;
+        }
+
+        // Ask Ghost who is reading, once per page, at `memberEndpoint`.
+        // Same-origin and cookie-authed: 204 means signed out, a body means
+        // signed in, and `paid` there already folds in comped members. Every
+        // other outcome — the flag off, a site without the endpoint, an offline
+        // reader — leaves 'unknown', which badges everything.
+        //
+        // Deliberately never awaited by a render path, so search latency never
+        // depends on it. The request is fired at init, so by the time a reader
+        // has opened search and typed it has almost always landed; if it has
+        // not, results render badged for an unknown reader and the query is
+        // re-run once when the answer arrives.
+        resolveReaderAccess() {
+            if (!this.config.memberAwareBadges) return Promise.resolve('unknown');
+            if (this.readerAccessPromise) return this.readerAccessPromise;
+
+            this.readerAccessPromise = fetch(this.config.memberEndpoint || DEFAULT_MEMBER_ENDPOINT, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { Accept: 'application/json' }
+            })
+                .then(async (response) => {
+                    if (response.status === 204) return 'anonymous';
+                    if (!response.ok) return 'unknown';
+                    const member = await response.json();
+                    return member && member.paid ? 'paid' : 'free';
+                })
+                .catch(() => 'unknown')
+                .then((access) => {
+                    this.readerAccess = access;
+                    // Anything already rendered was badged for an unknown
+                    // reader. Only a signed-in reader changes any of those
+                    // badges — 'anonymous' and 'unknown' badge identically — so
+                    // only then is a re-render worth a request. At init there is
+                    // nothing on screen and rerunQuery is a no-op, which is the
+                    // usual case: the lookup lands long before a reader has
+                    // opened search and typed.
+                    if (access === 'free' || access === 'paid') this.rerunQuery();
+                    return access;
+                });
+
+            return this.readerAccessPromise;
+        }
+
+        // A small lock badge shown on gated results. `access` is an accessLevel()
+        // value; 'public' (or nothing) renders no badge.
+        gatedBadge(access) {
+            if (!access || access === 'public') return '';
+            const isPaid = access === 'paid';
+            const label = this.escapeHtmlAttr(this.t(isPaid ? 'paidLabel' : 'membersLabel'));
+            const ariaLabel = this.escapeHtmlAttr(this.t(isPaid ? 'ariaPaidLabel' : 'ariaMembersLabel'));
+            return `<span class="${CSS_PREFIX}-gated-badge ${CSS_PREFIX}-gated-badge-${access}" aria-label="${ariaLabel}">
+                        <span aria-hidden="true">🔒</span> ${label}
                     </span>`;
         }
 
@@ -2100,35 +2227,35 @@ import Typesense from 'typesense';
         // Two call signatures are supported, distinguished at runtime by the
         // type of the first argument:
         //
-        //   renderListItem(title: string, excerpt?: string, isGated?: boolean)
+        //   renderListItem(title: string, excerpt?: string, access?: string)
         //     — the simple title+excerpt row. Used by the unit tests, which
         //       assert on this stable shape.
-        //   renderListItem(hit: object, title: string, excerpt: string, isGated: boolean)
+        //   renderListItem(hit: object, title: string, excerpt: string, access: string)
         //     — the rich row. `hit` is the Typesense hit (its `.document`
         //       supplies feature_image/tags/authors/etc.); `title`/`excerpt`
-        //       are the highlighted HTML. `isGated` arrives as the 4th argument
-        //       (read via `arguments[3]`) so the two signatures can share the
-        //       same three named parameters.
+        //       are the highlighted HTML. `access` is an accessLevel() value and
+        //       arrives as the 4th argument (read via `arguments[3]`) so the two
+        //       signatures can share the same three named parameters.
         //
         // Prefer calling the rich signature explicitly with all four arguments.
-        renderListItem(hitOrTitle, excerptOrUndefined, isGatedArg) {
-            // Legacy/string-call signature (tests): (title, excerpt, isGated)
+        renderListItem(hitOrTitle, excerptOrUndefined, accessArg) {
+            // Legacy/string-call signature (tests): (title, excerpt, access)
             if (typeof hitOrTitle === 'string') {
                 const title = hitOrTitle;
                 const excerpt = excerptOrUndefined || '';
                 return `
                     <article class="${CSS_PREFIX}-result-item" role="article">
-                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGatedArg)}</h3>
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(accessArg)}</h3>
                         <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                     </article>
                 `;
             }
 
-            // Rich-call signature: (hit, title, excerpt, isGated)
+            // Rich-call signature: (hit, title, excerpt, access)
             const hit = hitOrTitle;
             const title = excerptOrUndefined;
-            const excerpt = isGatedArg;
-            const isGated = arguments[3];
+            const excerpt = accessArg;
+            const access = arguments[3];
             const doc = hit.document || {};
 
             const featureImage = doc.feature_image;
@@ -2152,7 +2279,7 @@ import Typesense from 'typesense';
                 <article class="${CSS_PREFIX}-result-item ${CSS_PREFIX}-row" role="article">
                     ${thumb}
                     <div class="${CSS_PREFIX}-row-body">
-                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(access)}</h3>
                         <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                         ${meta}
                     </div>
@@ -2164,7 +2291,7 @@ import Typesense from 'typesense';
         // image is decorative (the link already carries the title via
         // aria-label); when a post has no feature_image a styled placeholder is
         // shown instead of a broken image.
-        renderGridCard(hit, title, excerpt, isGated) {
+        renderGridCard(hit, title, excerpt, access) {
             const featureImage = hit.document.feature_image;
             const imageHtml = featureImage
                 ? `<img class="${CSS_PREFIX}-card-image" src="${this.escapeHtmlAttr(featureImage)}" alt="" loading="lazy" />`
@@ -2181,7 +2308,7 @@ import Typesense from 'typesense';
                 <article class="${CSS_PREFIX}-result-item ${CSS_PREFIX}-card" role="article">
                     ${imageHtml}
                     <div class="${CSS_PREFIX}-card-body">
-                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(isGated)}</h3>
+                        <h3 class="${CSS_PREFIX}-result-title" role="heading" aria-level="3">${title}${this.gatedBadge(access)}</h3>
                         <p class="${CSS_PREFIX}-result-excerpt" aria-label="${this.t('ariaArticleExcerpt')}">${excerpt}</p>
                         ${tagsHtml}
                     </div>

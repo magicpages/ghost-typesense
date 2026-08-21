@@ -99,6 +99,15 @@
           <label><input type="checkbox" id="opt-suggestions" /> Pinned + common suggestions</label>
           <label><input type="checkbox" id="opt-semantic" /> Semantic search</label>
           <label><input type="checkbox" id="opt-analytics" checked /> Analytics (logged below)</label>
+          <label><input type="checkbox" id="opt-memberaware" /> Member-aware badges</label>
+          <label>Signed-in reader
+            <select id="opt-reader">
+              <option value="anonymous">signed out</option>
+              <option value="free">free member</option>
+              <option value="paid">paying member</option>
+              <option value="none">no member endpoint</option>
+            </select>
+          </label>
         </div>
         <div class="row">
           <label>Real Typesense endpoint (optional)

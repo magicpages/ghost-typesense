@@ -1,6 +1,6 @@
 {
   "name": "@magicpages/ghost-typesense",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "private": false,
   "type": "module",
   "workspaces": [

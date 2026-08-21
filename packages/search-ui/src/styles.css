@@ -590,7 +590,9 @@
     opacity: 0.5;
 }
 
-/* Members-only / paid result badge */
+/* Gated result badge. The free-member badge stays quiet; the paid badge carries
+   the accent, so a reader can tell the two gates apart at a glance. Both derive
+   from the theme tokens, so light and dark follow with no extra rules. */
 .mp-search-gated-badge {
     display: inline-flex;
     align-items: center;
@@ -605,6 +607,12 @@
     letter-spacing: 0.02em;
     vertical-align: middle;
     white-space: nowrap;
+}
+
+.mp-search-gated-badge-paid {
+    background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+    color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
+    font-weight: 600;
 }
 
 /* Grid (card) layout */

@@ -291,17 +291,22 @@ export default function createPaletteLayout(ctx) {
     if (tag) metaParts.push(`<span class="${L}-meta-chip">${ctx.escapeHtmlAttr(tag)}</span>`);
     if (date) metaParts.push(`<span class="${L}-meta-date">${ctx.escapeHtmlAttr(date)}</span>`);
 
-    const badge = m.isGated
-      ? `<span class="${L}-badge" aria-label="${ctx.escapeHtmlAttr(ctx.t('ariaMembersLabel'))}">${ctx.escapeHtmlAttr(ctx.t('membersLabel'))}</span>`
+    // One badge per gate: any signed-up reader, or paying readers only. Both
+    // labels come through ctx.t so a publisher can use their own words.
+    const isPaid = m.access === 'paid';
+    const badge = m.showBadge
+      ? `<span class="${L}-badge ${L}-badge-${m.access}" `
+        + `aria-label="${ctx.escapeHtmlAttr(ctx.t(isPaid ? 'ariaPaidLabel' : 'ariaMembersLabel'))}">`
+        + `${ctx.escapeHtmlAttr(ctx.t(isPaid ? 'paidLabel' : 'membersLabel'))}</span>`
       : '';
 
     const position = Number.isNaN(Number(m.position)) ? '' : Number(m.position);
 
     return `
-      <a href="${ctx.escapeHtmlAttr(m.url)}" class="${L}-row ${L}-row-post ${P}-result-link"
+      <a href="${ctx.escapeHtmlAttr(m.url)}" class="${L}-row ${L}-row-post ${P}-result-link${m.isGated ? ` ${P}-result-gated` : ''}"
          id="${L}-row-${idx}" role="option" aria-selected="false"
          data-index="${idx}" data-result-id="${ctx.escapeHtmlAttr(m.id)}"
-         data-result-position="${position}" aria-label="${m.ariaTitle}">
+         data-result-position="${position}"${m.isGated ? ` data-gated="${ctx.escapeHtmlAttr(m.visibility)}"` : ''} aria-label="${m.ariaTitle}">
         <span class="${L}-row-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

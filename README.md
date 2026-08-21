@@ -215,7 +215,7 @@ With it enabled:
 
 - Non-public posts (`members`, `paid`, tier-restricted) are indexed with their **title, excerpt, URL, tags, and feature image**, plus a `visibility` field.
 - The searchable text is limited to the public excerpt (falling back to the title). The post's body is **never read or indexed** — this package uses Ghost's Content API, which only ever returns the public preview for gated posts, and the indexer ignores the body regardless. There is no protected text in the index to leak.
-- The search UI marks these results with a "members only" badge (see the [search-ui README](packages/search-ui/README.md#members-only-results)), turning gated posts into discoverable lead magnets.
+- The search UI badges these results by gate — **Members** for anything a free signup can read, **Paid members** for paid and tier-restricted posts (see [gated results](packages/search-ui/README.md#gated-results)) — turning gated posts into discoverable lead magnets without sending a free subscriber somewhere they cannot read.
 
 For real-time updates, set `INDEX_GATED_CONTENT=true` on the webhook handler to mirror this behaviour.
 

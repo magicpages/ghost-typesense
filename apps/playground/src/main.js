@@ -13,6 +13,8 @@ const els = {
   suggestions: document.getElementById('opt-suggestions'),
   semantic: document.getElementById('opt-semantic'),
   analytics: document.getElementById('opt-analytics'),
+  memberAware: document.getElementById('opt-memberaware'),
+  reader: document.getElementById('opt-reader'),
   endpoint: document.getElementById('opt-endpoint'),
   apply: document.getElementById('apply'),
   open: document.getElementById('open'),
@@ -188,6 +190,9 @@ function buildConfig(backend) {
   if (els.analytics.checked) {
     config.analytics = { endpoint: ANALYTICS_ENDPOINT, siteId: 'playground' };
   }
+  if (els.memberAware && els.memberAware.checked) {
+    config.memberAwareBadges = true;
+  }
   return config;
 }
 
@@ -208,6 +213,8 @@ function readControls() {
     suggestions: els.suggestions.checked,
     semantic: els.semantic.checked,
     analytics: els.analytics.checked,
+    memberAware: els.memberAware ? els.memberAware.checked : false,
+    reader: els.reader ? els.reader.value : 'anonymous',
     endpoint: els.endpoint.value.trim()
   };
 }
@@ -222,12 +229,23 @@ function restoreControls(state) {
   els.suggestions.checked = !!state.suggestions;
   els.semantic.checked = !!state.semantic;
   els.analytics.checked = state.analytics !== false;
+  if (els.memberAware) els.memberAware.checked = !!state.memberAware;
+  if (els.reader) els.reader.value = state.reader ?? 'anonymous';
   els.endpoint.value = state.endpoint ?? '';
+}
+
+// The dev server answers /members/api/member from this cookie, standing in for
+// Ghost's own member session so the reader-aware badges can be stepped through
+// signed out → free → paying without a Ghost install.
+function applyReaderCookie(reader) {
+  document.cookie = `pg_reader=${encodeURIComponent(reader || 'anonymous')}; path=/`;
 }
 
 function apply() {
   // Persist the chosen options and reload; loadWidget() picks them up.
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...readControls(), open: true }));
+  const controls = readControls();
+  applyReaderCookie(controls.reader);
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...controls, open: true }));
   location.reload();
 }
 

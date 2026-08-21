@@ -1360,3 +1360,272 @@ describe('searchAuthors', () => {
     expect(params.query_by_weights).toBe('5,1,1');
   });
 });
+
+// Ghost gates a post two ways — anyone signed up, or paying readers only — and
+// a single "members only" badge conflates them, which sends a free subscriber
+// to a post they cannot read.
+describe('accessLevel — Ghost visibility to the gate a reader hits', () => {
+  const level = (visibility) => mountWithConfig().accessLevel(visibility);
+
+  it('reports no gate on a public post', () => {
+    expect(level('public')).toBe('public');
+  });
+
+  it('maps members to the free-member gate', () => {
+    expect(level('members')).toBe('members');
+  });
+
+  it('maps paid to the paid gate', () => {
+    expect(level('paid')).toBe('paid');
+  });
+
+  // Ghost filters a tiers post's tier list down to paid tiers when it
+  // serialises the post, so tier-gated content is never reachable for free.
+  it('maps tiers to the paid gate', () => {
+    expect(level('tiers')).toBe('paid');
+  });
+
+  it('treats a missing visibility as public, matching the indexer default', () => {
+    expect(level(undefined)).toBe('public');
+    expect(level('')).toBe('public');
+  });
+
+  it('falls back to the weaker claim on an unrecognised gate', () => {
+    expect(level('something-new')).toBe('members');
+  });
+});
+
+describe('needsBadge — suppressed only where access is certain', () => {
+  function el(readerAccess) {
+    const element = mountWithConfig({ memberAwareBadges: true });
+    element.readerAccess = readerAccess;
+    return element;
+  }
+
+  it('badges every gate while the reader is unknown', () => {
+    const unknown = el('unknown');
+    expect(unknown.needsBadge('members')).toBe(true);
+    expect(unknown.needsBadge('paid')).toBe(true);
+    expect(unknown.needsBadge('tiers')).toBe(true);
+  });
+
+  it('badges every gate for a signed-out reader', () => {
+    const anonymous = el('anonymous');
+    expect(anonymous.needsBadge('members')).toBe(true);
+    expect(anonymous.needsBadge('paid')).toBe(true);
+    expect(anonymous.needsBadge('tiers')).toBe(true);
+  });
+
+  it('drops the members badge for a free member, but keeps the paid ones', () => {
+    const free = el('free');
+    expect(free.needsBadge('members')).toBe(false);
+    expect(free.needsBadge('paid')).toBe(true);
+    expect(free.needsBadge('tiers')).toBe(true);
+  });
+
+  // A tiers post names specific paid tiers, and the index does not record which,
+  // so a paying reader keeps the badge rather than being promised access we
+  // cannot verify.
+  it('drops members and paid badges for a paying reader, but never tiers', () => {
+    const paid = el('paid');
+    expect(paid.needsBadge('members')).toBe(false);
+    expect(paid.needsBadge('paid')).toBe(false);
+    expect(paid.needsBadge('tiers')).toBe(true);
+  });
+
+  it('never badges a public post, whoever is reading', () => {
+    for (const reader of ['unknown', 'anonymous', 'free', 'paid']) {
+      expect(el(reader).needsBadge('public')).toBe(false);
+    }
+  });
+});
+
+describe('gatedBadge', () => {
+  it('renders nothing without a gate', () => {
+    const el = mountWithConfig();
+    expect(el.gatedBadge('public')).toBe('');
+    expect(el.gatedBadge(undefined)).toBe('');
+  });
+
+  it('labels the free-member gate and marks it as such', () => {
+    const dom = parse(mountWithConfig().gatedBadge('members'));
+    const badge = dom.querySelector('.mp-search-gated-badge');
+    expect(badge.classList.contains('mp-search-gated-badge-members')).toBe(true);
+    expect(badge.textContent).toContain('Members');
+    expect(badge.textContent).not.toContain('Paid');
+    expect(badge.getAttribute('aria-label')).toBe('Members-only content');
+  });
+
+  it('labels the paid gate distinctly', () => {
+    const dom = parse(mountWithConfig().gatedBadge('paid'));
+    const badge = dom.querySelector('.mp-search-gated-badge');
+    expect(badge.classList.contains('mp-search-gated-badge-paid')).toBe(true);
+    expect(badge.textContent).toContain('Paid members');
+    expect(badge.getAttribute('aria-label')).toBe('Paid-members-only content');
+  });
+
+  // Both labels come from the site's own translations, so they are text — the
+  // same contract every other translated string in the widget follows.
+  it('renders a label containing markup as text, never as markup', () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, paidLabel: '<img src=x onerror=alert(1)>' };
+    const dom = parse(el.gatedBadge('paid'));
+
+    expect(dom.querySelector('img')).toBeNull();
+    expect(dom.querySelector('.mp-search-gated-badge').textContent)
+      .toContain('<img src=x onerror=alert(1)>');
+  });
+
+  it('lets a publisher use their own word for a paying reader', () => {
+    const el = mountWithConfig();
+    el.i18n = { ...el.defaultI18n, paidLabel: 'Supporters' };
+    expect(parse(el.gatedBadge('paid')).querySelector('.mp-search-gated-badge').textContent)
+      .toContain('Supporters');
+  });
+});
+
+describe('normalizeHit — the gate handed to alternative layouts', () => {
+  function hitWith(visibility) {
+    return { document: { id: 'p1', title: 'A post', excerpt: 'Teaser', visibility } };
+  }
+
+  it('carries the access bucket so no layout has to re-derive it', () => {
+    const el = mountWithConfig();
+    expect(el.normalizeHit(hitWith('tiers'), 0).access).toBe('paid');
+    expect(el.normalizeHit(hitWith('members'), 0).access).toBe('members');
+    expect(el.normalizeHit(hitWith('public'), 0).access).toBe('public');
+  });
+
+  it('carries the per-reader badge decision alongside it', () => {
+    const el = mountWithConfig({ memberAwareBadges: true });
+    el.readerAccess = 'free';
+
+    const members = el.normalizeHit(hitWith('members'), 0);
+    expect(members.isGated).toBe(true);
+    expect(members.showBadge).toBe(false);
+    expect(el.normalizeHit(hitWith('paid'), 0).showBadge).toBe(true);
+  });
+});
+
+describe('reader membership lookup', () => {
+  let realFetch;
+  beforeEach(() => {
+    realFetch = global.fetch;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  function memberResponse(body) {
+    return { status: 200, ok: true, json: () => Promise.resolve(body) };
+  }
+
+  it('never asks Ghost while the flag is off', async () => {
+    global.fetch = vi.fn();
+    const el = mountWithConfig();
+
+    expect(await el.resolveReaderAccess()).toBe('unknown');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('reads a signed-out reader from the 204', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    expect(await el.resolveReaderAccess()).toBe('anonymous');
+    expect(el.readerAccess).toBe('anonymous');
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe('/members/api/member');
+    expect(init.credentials).toBe('same-origin');
+    expect(init.cache).toBe('no-store');
+  });
+
+  it('reads a free member', async () => {
+    global.fetch = vi.fn().mockResolvedValue(memberResponse({ status: 'free', paid: false }));
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    expect(await el.resolveReaderAccess()).toBe('free');
+  });
+
+  // Ghost's own payload sets `paid` for comped members too, so a complimentary
+  // subscription is treated as paying — which it is, for access.
+  it('reads a paying member, comped included', async () => {
+    global.fetch = vi.fn().mockResolvedValue(memberResponse({ status: 'comped', paid: true }));
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    expect(await el.resolveReaderAccess()).toBe('paid');
+  });
+
+  it('stays unknown when the request fails, so nothing is wrongly unbadged', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    expect(await el.resolveReaderAccess()).toBe('unknown');
+    expect(el.needsBadge('paid')).toBe(true);
+  });
+
+  it('stays unknown on a site with no member endpoint', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 404, ok: false });
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    expect(await el.resolveReaderAccess()).toBe('unknown');
+  });
+
+  // Ghost can live under a subdirectory, or behind a proxy that rewrites paths.
+  // Hard-coding the origin-root path would 404 there, and a 404 reads as "no
+  // member endpoint" — every gated post silently keeps its badge.
+  it('honours a configured endpoint for a subdirectory install', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({
+      memberAwareBadges: true,
+      memberEndpoint: '/blog/members/api/member'
+    });
+
+    await el.resolveReaderAccess();
+    expect(global.fetch.mock.calls[0][0]).toBe('/blog/members/api/member');
+  });
+
+  // The lookup is fired at init and never awaited, so a fast reader on a slow
+  // connection can get results badged for an unknown reader. Re-running the
+  // query when the answer lands is what stops that badge sticking around.
+  it('re-runs the query when a signed-in reader resolves after a render', async () => {
+    let settle;
+    global.fetch = vi.fn(() => new Promise((resolve) => { settle = resolve; }));
+    const el = mountWithConfig({ memberAwareBadges: true });
+    el.rerunQuery = vi.fn();
+    el.searchInput.value = 'composting';
+
+    const pending = el.resolveReaderAccess();
+    // Rendered while still unknown: every gate keeps its badge.
+    expect(el.needsBadge('members')).toBe(true);
+    expect(el.rerunQuery).not.toHaveBeenCalled();
+
+    settle({ status: 200, ok: true, json: () => Promise.resolve({ status: 'free', paid: false }) });
+    await pending;
+
+    expect(el.needsBadge('members')).toBe(false);
+    expect(el.rerunQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // Most traffic is signed out, and a signed-out reader is badged exactly like
+  // an unresolved one — so re-running would cost a request and change nothing.
+  it('does not re-run for a signed-out reader', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({ memberAwareBadges: true });
+    el.rerunQuery = vi.fn();
+
+    await el.resolveReaderAccess();
+
+    expect(el.rerunQuery).not.toHaveBeenCalled();
+  });
+
+  it('asks once per page, however often it is called', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({ memberAwareBadges: true });
+
+    await Promise.all([el.resolveReaderAccess(), el.resolveReaderAccess()]);
+    await el.resolveReaderAccess();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});

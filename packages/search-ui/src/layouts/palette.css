@@ -397,7 +397,8 @@
   color: white;
 }
 
-/* Members badge — accent tint (mirrors the modal's gated badge intent) */
+/* Gated badge — quiet for the free-member gate, accent for the paid one
+   (mirrors the modal's gated badge intent) */
 .mp-search-palette .mp-search-palette-badge {
   padding: calc(0.0625 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
   border-radius: calc(0.5 * var(--mp-rem));
@@ -405,9 +406,15 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+}
+
+.mp-search-palette .mp-search-palette-badge-paid {
   color: color-mix(in srgb, var(--accent-color) 85%, var(--color-text));
   background: color-mix(in srgb, var(--accent-color) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 30%, transparent);
 }
 
 /* Enter affordance only on the active post row */

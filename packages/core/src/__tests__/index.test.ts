@@ -317,6 +317,21 @@ describe('GhostTypesenseManager — gated content redaction', () => {
     expect(doc.tags).toEqual(['Premium']);
   });
 
+  // The search UI distinguishes a free-member gate from a paid one, so Ghost's
+  // exact visibility has to survive redaction rather than collapsing to a
+  // generic "gated". 'tiers' is what Ghost reports for tier-restricted posts.
+  it.each(['paid', 'tiers'])('keeps a %s post\'s own visibility on the redacted document', (visibility) => {
+    const manager = new GhostTypesenseManager({
+      ...baseConfig,
+      collection: { ...baseConfig.collection, indexGatedContent: true }
+    });
+    const doc = transform(manager, { ...gatedPost, visibility });
+
+    expect(doc.visibility).toBe(visibility);
+    expect(doc.html).toBe('');
+    expect(JSON.stringify(doc)).not.toContain('SECRET_PROTECTED_BODY');
+  });
+
   it('falls back to the title when a gated post has no excerpt', () => {
     const manager = new GhostTypesenseManager({
       ...baseConfig,

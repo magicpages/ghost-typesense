@@ -31,6 +31,10 @@ function makeCtx() {
     // Echoing the key is enough for most assertions. didYouMeanLabel carries a
     // {q} placeholder the layout has to substitute, so it needs a real template.
     t: (k) => (k === 'didYouMeanLabel' ? 'Did you mean {q}?' : k),
+    // Part of the real layout context (buildLayoutContext in search.js); the
+    // composed result surface reads it to draw the active-filter pills.
+    getSelectedFacets: () => ({}),
+    toggleFacet: vi.fn(),
     search: vi.fn()
   };
 }
@@ -168,5 +172,82 @@ describe('palette did-you-mean label contract', () => {
     const results = shadow.getElementById('mp-search-palette-listbox');
     expect(results.querySelector('img')).toBeNull();
     expect(results.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+});
+
+// Ghost gates a post two ways — anyone signed up, or paying readers only — and
+// the palette's row badge has to say which.
+describe('palette gated rows', () => {
+  // Mirrors what normalizeHit hands the layout. `showBadge` is the core's
+  // per-reader decision; `access` is the gate itself.
+  function gatedModel({ visibility, access, showBadge = true }) {
+    return [
+      {
+        id: 'p1',
+        position: 0,
+        url: '/post/',
+        title: 'A post',
+        titleHtml: 'A post',
+        ariaTitle: 'A post',
+        excerptHtml: 'Body teaser',
+        isGated: visibility !== 'public',
+        access,
+        showBadge,
+        visibility,
+        featureImage: null,
+        tags: ['Gardening'],
+        authors: ['Ada Lovelace'],
+        publishedAt: 1700000000000
+      }
+    ];
+  }
+
+  function rowFor(model) {
+    const { layout, shadow } = mountPalette();
+    layout.renderResults(model, { found: 1, query: 'composting' });
+    return shadow.querySelector('.mp-search-palette-row-post');
+  }
+
+  // makeCtx().t echoes the key, so the keys themselves are the assertion.
+  it('labels a free-member row distinctly from a paid one', () => {
+    const free = rowFor(gatedModel({ visibility: 'members', access: 'members' }))
+      .querySelector('.mp-search-palette-badge');
+    expect(free.classList.contains('mp-search-palette-badge-members')).toBe(true);
+    expect(free.textContent).toBe('membersLabel');
+    expect(free.getAttribute('aria-label')).toBe('ariaMembersLabel');
+
+    const paid = rowFor(gatedModel({ visibility: 'paid', access: 'paid' }))
+      .querySelector('.mp-search-palette-badge');
+    expect(paid.classList.contains('mp-search-palette-badge-paid')).toBe(true);
+    expect(paid.textContent).toBe('paidLabel');
+    expect(paid.getAttribute('aria-label')).toBe('ariaPaidLabel');
+  });
+
+  it('badges a tier-gated row as paid', () => {
+    const badge = rowFor(gatedModel({ visibility: 'tiers', access: 'paid' }))
+      .querySelector('.mp-search-palette-badge');
+    expect(badge.classList.contains('mp-search-palette-badge-paid')).toBe(true);
+  });
+
+  // Same contract the modal layout offers, so theme code can style a gate or
+  // route the click to a membership flow whichever layout is in use.
+  it('exposes the raw visibility on the row', () => {
+    const row = rowFor(gatedModel({ visibility: 'tiers', access: 'paid' }));
+    expect(row.getAttribute('data-gated')).toBe('tiers');
+    expect(row.classList.contains('mp-search-result-gated')).toBe(true);
+  });
+
+  it('drops the badge for a reader who can already open the post', () => {
+    const row = rowFor(gatedModel({ visibility: 'members', access: 'members', showBadge: false }));
+    expect(row.querySelector('.mp-search-palette-badge')).toBeNull();
+    // The gate itself is still exposed for theme code.
+    expect(row.getAttribute('data-gated')).toBe('members');
+  });
+
+  it('leaves a public row unbadged and unmarked', () => {
+    const row = rowFor(gatedModel({ visibility: 'public', access: 'public', showBadge: false }));
+    expect(row.querySelector('.mp-search-palette-badge')).toBeNull();
+    expect(row.hasAttribute('data-gated')).toBe(false);
+    expect(row.classList.contains('mp-search-result-gated')).toBe(false);
   });
 });
