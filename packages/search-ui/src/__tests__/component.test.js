@@ -1571,6 +1571,20 @@ describe('reader membership lookup', () => {
     expect(await el.resolveReaderAccess()).toBe('unknown');
   });
 
+  // Ghost can live under a subdirectory, or behind a proxy that rewrites paths.
+  // Hard-coding the origin-root path would 404 there, and a 404 reads as "no
+  // member endpoint" — every gated post silently keeps its badge.
+  it('honours a configured endpoint for a subdirectory install', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
+    const el = mountWithConfig({
+      memberAwareBadges: true,
+      memberEndpoint: '/blog/members/api/member'
+    });
+
+    await el.resolveReaderAccess();
+    expect(global.fetch.mock.calls[0][0]).toBe('/blog/members/api/member');
+  });
+
   it('asks once per page, however often it is called', async () => {
     global.fetch = vi.fn().mockResolvedValue({ status: 204, ok: true });
     const el = mountWithConfig({ memberAwareBadges: true });

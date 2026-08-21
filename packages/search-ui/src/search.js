@@ -218,6 +218,11 @@ import Typesense from 'typesense';
     const DEFAULT_FACET_LIMIT = 10;
     const FACET_EXPANSION_STEP = 40;
 
+    // Ghost's own member-session endpoint, relative to the origin root. A
+    // subdirectory install or a path-rewriting proxy overrides it via
+    // `memberEndpoint`.
+    const DEFAULT_MEMBER_ENDPOINT = '/members/api/member';
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -411,7 +416,14 @@ import Typesense from 'typesense';
                 // badge is only shown for content they actually cannot open.
                 // Off by default: the widget is also embedded on sites that have
                 // no Ghost member endpoint to ask.
-                memberAwareBadges: defaultConfig.memberAwareBadges === true
+                memberAwareBadges: defaultConfig.memberAwareBadges === true,
+                // Where that lookup goes. The default is Ghost's own path at the
+                // origin root; a subdirectory install or a path-rewriting proxy
+                // needs its own prefix, or the lookup 404s and every gated
+                // result keeps its badge.
+                memberEndpoint: typeof defaultConfig.memberEndpoint === 'string' && defaultConfig.memberEndpoint.trim()
+                    ? defaultConfig.memberEndpoint.trim()
+                    : DEFAULT_MEMBER_ENDPOINT
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -2135,11 +2147,11 @@ import Typesense from 'typesense';
             return true;
         }
 
-        // Ask Ghost who is reading, once per page. Same-origin and cookie-authed:
-        // 204 means signed out, a body means signed in, and `paid` there already
-        // folds in comped members. Every other outcome — the flag off, a site
-        // without the endpoint, an offline reader — leaves 'unknown', which
-        // badges everything.
+        // Ask Ghost who is reading, once per page, at `memberEndpoint`.
+        // Same-origin and cookie-authed: 204 means signed out, a body means
+        // signed in, and `paid` there already folds in comped members. Every
+        // other outcome — the flag off, a site without the endpoint, an offline
+        // reader — leaves 'unknown', which badges everything.
         //
         // Deliberately never awaited by a render path: badges reflect whatever
         // has resolved by the time a query is typed, and the request is fired at
@@ -2148,7 +2160,7 @@ import Typesense from 'typesense';
             if (!this.config.memberAwareBadges) return Promise.resolve('unknown');
             if (this.readerAccessPromise) return this.readerAccessPromise;
 
-            this.readerAccessPromise = fetch('/members/api/member', {
+            this.readerAccessPromise = fetch(this.config.memberEndpoint || DEFAULT_MEMBER_ENDPOINT, {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { Accept: 'application/json' }

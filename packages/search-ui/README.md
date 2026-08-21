@@ -99,6 +99,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `semanticDistanceThreshold` | `Number` | No | `0.8` | Drop vector matches whose cosine distance exceeds this when `semanticSearch` is on; lower is stricter |
 | `facets` | `Array` | No | `[]` | Reader-facing filter controls for faceted fields (see [Filters](#filters)) |
 | `memberAwareBadges` | `Boolean` | No | `false` | Ask Ghost who is reading, and drop the gated badge from posts this reader can already open (see [Gated results](#gated-results)) |
+| `memberEndpoint` | `String` | No | `'/members/api/member'` | Path of Ghost's member-session endpoint, for a subdirectory install or a path-rewriting proxy |
 | `uiStyle` | `String` | No | `'modal'` | Overall layout: `'modal'`, `'palette'`, or `'discovery'` (see [UI layouts](#ui-layouts)) |
 | `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
@@ -448,6 +449,15 @@ A free subscriber is a "member" as far as they are concerned, so a badge that ju
 A `tiers` post keeps its badge even for a paying reader: it names specific paid tiers, and the index does not record which, so the widget will not promise access it cannot verify.
 
 It is **off by default**. Turn it on only on a Ghost site — anywhere else the endpoint does not exist. Every failure (endpoint missing, reader offline, response not yet back) leaves the badges exactly as they are without it, so nothing is ever wrongly unbadged. `data-gated` is unaffected: the gate stays on the element for your theme code whether or not the badge is shown.
+
+The default path assumes Ghost is served from the origin root. On a subdirectory install, or behind a proxy that rewrites paths, point `memberEndpoint` at the right place:
+
+```js
+memberAwareBadges: true,
+memberEndpoint: '/blog/members/api/member'
+```
+
+Keep it same-origin. The lookup is sent with `credentials: 'same-origin'`, so a cross-origin URL arrives without the reader's Ghost session cookie and every reader looks signed out.
 
 ## Semantic search
 
