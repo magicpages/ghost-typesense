@@ -91,6 +91,23 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     /* Above subscribe button on mobile */
     z-index: 3999999;
+
+    /* The root is a <dialog>, so neutralise the UA chrome it ships with
+       (border, auto margins and a max-width/height that would shrink it away
+       from the full-viewport overlay above). z-index still governs the
+       non-modal fallback path; once showModal() promotes this into the top
+       layer the stacking order is the browser's, not ours, which puts the
+       overlay above Ghost's subscribe button on desktop too. */
+    border: 0;
+    margin: 0;
+    max-width: none;
+    max-height: none;
+}
+
+/* Our own backdrop element provides the scrim, so the top-layer one stays out
+   of the way instead of double-darkening it. */
+.mp-search-modal::backdrop {
+    background: transparent;
 }
 
 @media (min-width: 640px) {
