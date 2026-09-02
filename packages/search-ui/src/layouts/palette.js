@@ -483,7 +483,7 @@ export default function createPaletteLayout(ctx) {
 
     buildMarkup() {
       return `
-        <div id="${L}" class="${L} ${P}-hidden" role="dialog" aria-modal="true"
+        <dialog id="${L}" class="${L} ${P}-hidden" aria-modal="true"
              aria-label="${ctx.t('ariaModalLabel')}">
           <div class="${P}-backdrop ${L}-backdrop"></div>
           <div class="${L}-panel">
@@ -524,7 +524,7 @@ export default function createPaletteLayout(ctx) {
               <span class="${L}-hint ${L}-status" aria-live="polite"></span>
             </div>
           </div>
-        </div>`;
+        </dialog>`;
     },
 
     cacheElements(shadowRoot) {
@@ -543,6 +543,12 @@ export default function createPaletteLayout(ctx) {
     bindEvents() {
       if (refs.backdrop) {
         refs.backdrop.addEventListener('click', () => ctx.close());
+      }
+
+      // Esc dismisses a modal <dialog> natively; route it back through the
+      // core so lifecycle state follows the surface.
+      if (refs.panel) {
+        refs.panel.addEventListener('close', () => ctx.close());
       }
 
       if (refs.input) {
@@ -615,7 +621,10 @@ export default function createPaletteLayout(ctx) {
     },
 
     onOpen() {
-      if (refs.panel) refs.panel.classList.remove(`${P}-hidden`);
+      if (refs.panel) {
+        refs.panel.classList.remove(`${P}-hidden`);
+        ctx.enterTopLayer(refs.panel);
+      }
       // Refresh recent (another tab may have written it) and show the recent
       // surface if nothing has been typed yet.
       if (!currentQuery.trim()) {
@@ -625,7 +634,10 @@ export default function createPaletteLayout(ctx) {
     },
 
     onClose() {
-      if (refs.panel) refs.panel.classList.add(`${P}-hidden`);
+      if (refs.panel) {
+        ctx.exitTopLayer(refs.panel);
+        refs.panel.classList.add(`${P}-hidden`);
+      }
       if (refs.input) refs.input.value = '';
       currentQuery = '';
       currentModel = [];

@@ -45,6 +45,19 @@
   line-height: 1.5;
   color: var(--color-text);
   -webkit-text-size-adjust: 100%;
+
+  /* The root is a <dialog>: drop the UA chrome. background matters most here —
+     the scrim is a child element, so the UA's opaque canvas would hide the
+     page behind an unstyled slab. */
+  border: 0;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+}
+
+.mp-search-discovery::backdrop {
+  background: transparent;
 }
 
 /* Dark theme overrides (mirrors styles.css .mp-search-dark) */

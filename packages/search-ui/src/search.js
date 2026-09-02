@@ -75,6 +75,39 @@ import Typesense from 'typesense';
         return promise;
     }
 
+    // Promote a surface into the browser's top layer.
+    //
+    // Themes commonly focus-trap an open navigation (the focus-trap library is
+    // widespread). A trap re-focuses its own container whenever focus lands
+    // outside it, and a nav link pointing at Ghost's #/search hash opens our
+    // search without unloading the page — so the trap is still armed and takes
+    // the caret straight back out of our input, leaving a visible but
+    // untypeable modal.
+    //
+    // showModal() makes every element outside the top layer inert, so the
+    // trap's own focus() call becomes a no-op and the caret stays with us. This
+    // neutralises the trap by declaring real modality rather than by patching
+    // or disabling the theme's accessibility code.
+    //
+    // Visibility stays owned by the CSS_PREFIX-hidden class on both paths;
+    // these helpers only add modality, and no-op where <dialog> is unsupported
+    // (Safari < 15.4) or unimplemented (jsdom), which keeps the pre-dialog
+    // behaviour intact.
+    function enterTopLayer(el) {
+        if (!el || typeof el.showModal !== 'function' || el.open) return;
+        try {
+            el.showModal();
+        } catch {
+            // Not connected yet, or already modal via another path. The surface
+            // is visible regardless, so degrade to the non-modal behaviour.
+        }
+    }
+
+    function exitTopLayer(el) {
+        if (!el || typeof el.close !== 'function' || !el.open) return;
+        el.close();
+    }
+
     function cleanupGhostSearch() {
         // Only cleanup after we've initialized
         if (!isInitialized) return;
@@ -737,6 +770,10 @@ import Typesense from 'typesense';
                 trackClick: (id, pos) => this.trackClick(id, pos),
                 emitClick: (id, pos) => this.trackClick(id, pos),
                 close: () => this.closeModal(),
+                // Layouts own their root element, so they promote and demote it
+                // themselves. See enterTopLayer for why this matters.
+                enterTopLayer: (el) => enterTopLayer(el),
+                exitTopLayer: (el) => exitTopLayer(el),
                 log: () => {}
             };
         }
@@ -830,7 +867,7 @@ import Typesense from 'typesense';
             // Create modal HTML
             const modalContainer = document.createElement('div');
             modalContainer.innerHTML = `
-                <div id="${CSS_PREFIX}-modal" class="${CSS_PREFIX}-modal ${CSS_PREFIX}-hidden" role="dialog" aria-modal="true" aria-label="${this.t('ariaModalLabel')}">
+                <dialog id="${CSS_PREFIX}-modal" class="${CSS_PREFIX}-modal ${CSS_PREFIX}-hidden" aria-modal="true" aria-label="${this.t('ariaModalLabel')}">
                     <div class="${CSS_PREFIX}-backdrop"></div>
                     <div class="${CSS_PREFIX}-container">
                         <button class="${CSS_PREFIX}-close" aria-label="${this.t('ariaCloseLabel')}">
@@ -885,7 +922,7 @@ import Typesense from 'typesense';
                             </div>
                         </div>
                     </div>
-                </div>
+                </dialog>
             `;
 
             // Append to shadow DOM
@@ -1003,6 +1040,13 @@ import Typesense from 'typesense';
                     this.closeModal();
                 }
             });
+
+            // A modal <dialog> closes itself on Esc, which would otherwise
+            // leave isModalOpen, the scroll lock and the URL hash out of sync
+            // with a dismissed surface. Routing the native event back through
+            // closeModal() reconciles them; it early-returns when our own Esc
+            // handler already ran, so the two paths can't double-close.
+            this.modal.addEventListener('close', () => this.closeModal());
 
             // Prevent clicks on modal content from closing
             const modalContent = this.shadowRoot.querySelector(`.${CSS_PREFIX}-container`);
@@ -1169,8 +1213,10 @@ import Typesense from 'typesense';
                 this.activeLayout.onOpen();
                 this.activeLayout.focusInput();
             } else if (this.modal) {
-                // Show modal
+                // Show modal. Unhide before entering the top layer: showModal()
+                // on a display:none element has nothing to focus.
                 this.modal.classList.remove(`${CSS_PREFIX}-hidden`);
+                enterTopLayer(this.modal);
                 // Focus search input
                 setTimeout(() => {
                     this.searchInput && this.searchInput.focus();
@@ -1209,6 +1255,7 @@ import Typesense from 'typesense';
             if (this.activeLayout) {
                 this.activeLayout.onClose();
             } else {
+                exitTopLayer(this.modal);
                 this.modal.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.searchInput) this.searchInput.value = '';
             }

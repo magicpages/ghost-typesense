@@ -45,6 +45,23 @@
   line-height: 1.5;
   color: var(--color-text);
   -webkit-text-size-adjust: 100%;
+
+  /* The root is a <dialog>: drop the UA chrome. This rule sets no size of its
+     own and relies on inset, so width/height must stay auto rather than the
+     UA's fit-content, and the scrim is a child element so the UA's opaque
+     canvas background has to go. */
+  border: 0;
+  margin: 0;
+  padding: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+}
+
+.mp-search-palette::backdrop {
+  background: transparent;
 }
 
 .mp-search-palette.mp-search-dark {

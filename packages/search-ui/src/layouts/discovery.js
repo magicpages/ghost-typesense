@@ -338,7 +338,7 @@ export default function createDiscoveryLayout(ctx) {
 
     buildMarkup() {
       return `
-        <div id="${P}-discovery" class="${P}-discovery ${P}-hidden" role="dialog" aria-modal="true" aria-label="${esc(ctx.t('ariaModalLabel'))}">
+        <dialog id="${P}-discovery" class="${P}-discovery ${P}-hidden" aria-modal="true" aria-label="${esc(ctx.t('ariaModalLabel'))}">
           <div class="${P}-backdrop"></div>
           <div class="${P}-discovery-panel" role="document">
             <div class="${P}-discovery-header">
@@ -358,7 +358,7 @@ export default function createDiscoveryLayout(ctx) {
               <section id="${P}-discovery-preview" class="${P}-discovery-preview" aria-live="polite" aria-label="${esc(ctx.t('discoveryPreviewLabel'))}"></section>
             </div>
           </div>
-        </div>`;
+        </dialog>`;
     },
 
     cacheElements(shadowRoot) {
@@ -382,6 +382,9 @@ export default function createDiscoveryLayout(ctx) {
         refs.panel.addEventListener('mousedown', (e) => {
           if (e.target.classList.contains(`${P}-backdrop`)) ctx.close();
         });
+        // Esc dismisses a modal <dialog> natively; route it back through the
+        // core so lifecycle state follows the surface.
+        refs.panel.addEventListener('close', () => ctx.close());
       }
 
       // Debounced, core-driven search (~80ms).
@@ -475,7 +478,10 @@ export default function createDiscoveryLayout(ctx) {
     },
 
     onOpen() {
-      if (refs.panel) refs.panel.classList.remove(`${P}-hidden`);
+      if (refs.panel) {
+        refs.panel.classList.remove(`${P}-hidden`);
+        ctx.enterTopLayer(refs.panel);
+      }
       // Paint the welcoming initial state if nothing has been typed yet — the
       // seam doesn't render layouts on open, so without this the panes show as
       // bare empty columns.
@@ -483,7 +489,10 @@ export default function createDiscoveryLayout(ctx) {
     },
 
     onClose() {
-      if (refs.panel) refs.panel.classList.add(`${P}-hidden`);
+      if (refs.panel) {
+        ctx.exitTopLayer(refs.panel);
+        refs.panel.classList.add(`${P}-hidden`);
+      }
       if (refs.input) refs.input.value = '';
       if (debounce) { clearTimeout(debounce); debounce = null; }
       model = [];
