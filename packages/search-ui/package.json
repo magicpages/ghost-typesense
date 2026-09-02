@@ -39,7 +39,7 @@
     "@rollup/plugin-terser": "^0.4.4",
     "cssnano": "^9.0.1",
     "eslint": "^10.9.1",
-    "jsdom": "^24.0.0",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
     "rimraf": "^6.1.3",
