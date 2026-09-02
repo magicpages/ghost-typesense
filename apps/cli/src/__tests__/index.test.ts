@@ -4,11 +4,13 @@ import { GhostTypesenseManager } from '@magicpages/ghost-typesense-core';
 
 // Mock the core package
 vi.mock('@magicpages/ghost-typesense-core', () => ({
-  GhostTypesenseManager: vi.fn().mockImplementation(() => ({
-    initializeCollection: vi.fn().mockResolvedValue(undefined),
-    indexAllPosts: vi.fn().mockResolvedValue(undefined),
-    clearCollection: vi.fn().mockResolvedValue(undefined)
-  }))
+  GhostTypesenseManager: vi.fn().mockImplementation(function () {
+    return {
+      initializeCollection: vi.fn().mockResolvedValue(undefined),
+      indexAllPosts: vi.fn().mockResolvedValue(undefined),
+      clearCollection: vi.fn().mockResolvedValue(undefined)
+    };
+  })
 }));
 
 // Mock fs

@@ -46,7 +46,7 @@
     "rollup": "^4.63.0",
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-visualizer": "^7.1.1",
-    "vitest": "^1.2.2"
+    "vitest": "^4.1.11"
   },
   "publishConfig": {
     "access": "public"

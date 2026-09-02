@@ -22,10 +22,12 @@ vi.mock('@magicpages/ghost-typesense-core', () => {
   const indexPost = vi.fn().mockResolvedValue(undefined);
   const deletePost = vi.fn().mockResolvedValue(undefined);
   return {
-    GhostTypesenseManager: vi.fn().mockImplementation(() => ({
-      indexPost,
-      deletePost
-    }))
+    GhostTypesenseManager: vi.fn().mockImplementation(function () {
+      return {
+        indexPost,
+        deletePost
+      };
+    })
   };
 });
 

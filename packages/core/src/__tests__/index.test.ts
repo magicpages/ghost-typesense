@@ -5,102 +5,104 @@ import type { Config } from '@magicpages/ghost-typesense-config';
 // Mock the external dependencies
 vi.mock('@ts-ghost/content-api', () => {
   return {
-    TSGhostContentAPI: vi.fn().mockImplementation(() => ({
-      posts: {
-        browse: () => ({
-          include: () => ({
-            fetch: async () => ({
-              success: true,
-              data: [
-                {
-                  id: 'test-post-1',
-                  title: 'Test Post 1',
-                  slug: 'test-post-1',
-                  html: '<p>Test content</p>',
-                  excerpt: 'Test excerpt',
-                  published_at: '2024-02-09T19:00:00.000Z',
-                  updated_at: '2024-02-09T19:00:00.000Z',
-                  tags: [{ name: 'test-tag' }],
-                  authors: [{ name: 'Test Author' }]
-                },
-                {
-                  id: 'excluded-bulk-post',
-                  title: 'Excluded Bulk Post',
-                  slug: 'excluded-bulk-post',
-                  html: '<p>Should not be indexed</p>',
-                  excerpt: 'nope',
-                  published_at: '2024-02-09T19:00:00.000Z',
-                  updated_at: '2024-02-09T19:00:00.000Z',
-                  tags: [{ name: '#no-search-index', slug: 'hash-no-search-index' }],
-                  authors: [{ name: 'Test Author' }]
+    TSGhostContentAPI: vi.fn().mockImplementation(function () {
+      return {
+        posts: {
+          browse: () => ({
+            include: () => ({
+              fetch: async () => ({
+                success: true,
+                data: [
+                  {
+                    id: 'test-post-1',
+                    title: 'Test Post 1',
+                    slug: 'test-post-1',
+                    html: '<p>Test content</p>',
+                    excerpt: 'Test excerpt',
+                    published_at: '2024-02-09T19:00:00.000Z',
+                    updated_at: '2024-02-09T19:00:00.000Z',
+                    tags: [{ name: 'test-tag' }],
+                    authors: [{ name: 'Test Author' }]
+                  },
+                  {
+                    id: 'excluded-bulk-post',
+                    title: 'Excluded Bulk Post',
+                    slug: 'excluded-bulk-post',
+                    html: '<p>Should not be indexed</p>',
+                    excerpt: 'nope',
+                    published_at: '2024-02-09T19:00:00.000Z',
+                    updated_at: '2024-02-09T19:00:00.000Z',
+                    tags: [{ name: '#no-search-index', slug: 'hash-no-search-index' }],
+                    authors: [{ name: 'Test Author' }]
+                  }
+                ],
+                meta: {
+                  pagination: {
+                    total: 2,
+                    limit: 15
+                  }
                 }
-              ],
-              meta: {
-                pagination: {
-                  total: 2,
-                  limit: 15
-                }
-              }
+              })
+            })
+          }),
+          // `read` returns a public post by default, or a members-only post when
+          // asked for the gated id — so the gated indexPost paths can be tested.
+          read: ({ id }: { id: string }) => ({
+            include: () => ({
+              fetch: async () =>
+                id === 'excluded-post-1'
+                  ? {
+                      success: true,
+                      data: {
+                        id: 'excluded-post-1',
+                        title: 'Landing Page',
+                        slug: 'landing-page',
+                        html: '<p>Marketing copy.</p>',
+                        excerpt: 'Marketing copy.',
+                        visibility: 'public',
+                        published_at: '2024-02-09T19:00:00.000Z',
+                        updated_at: '2024-02-09T19:00:00.000Z',
+                        tags: [{ name: '#no-search-index', slug: 'hash-no-search-index', visibility: 'internal' }],
+                        authors: [{ name: 'Test Author' }]
+                      }
+                    }
+                  : id === 'gated-post-1'
+                  ? {
+                      success: true,
+                      data: {
+                        id: 'gated-post-1',
+                        title: 'Members Post',
+                        slug: 'members-post',
+                        html: '<p>SECRET_PROTECTED_BODY for members only.</p>',
+                        plaintext: 'SECRET_PROTECTED_BODY for members only.',
+                        excerpt: 'A public teaser.',
+                        visibility: 'members',
+                        published_at: '2024-02-09T19:00:00.000Z',
+                        updated_at: '2024-02-09T19:00:00.000Z',
+                        tags: [{ name: 'premium', slug: 'premium' }],
+                        authors: [{ name: 'Test Author' }]
+                      }
+                    }
+                  : {
+                      success: true,
+                      data: {
+                        id: 'test-post-1',
+                        title: 'Test Post 1',
+                        slug: 'test-post-1',
+                        html: '<p>Test content</p>',
+                        excerpt: 'Test excerpt',
+                        visibility: 'public',
+                        published_at: '2024-02-09T19:00:00.000Z',
+                        updated_at: '2024-02-09T19:00:00.000Z',
+                        tags: [{ name: 'test-tag' }],
+                        authors: [{ name: 'Test Author' }]
+                      }
+                    }
             })
           })
-        }),
-        // `read` returns a public post by default, or a members-only post when
-        // asked for the gated id — so the gated indexPost paths can be tested.
-        read: ({ id }: { id: string }) => ({
-          include: () => ({
-            fetch: async () =>
-              id === 'excluded-post-1'
-                ? {
-                    success: true,
-                    data: {
-                      id: 'excluded-post-1',
-                      title: 'Landing Page',
-                      slug: 'landing-page',
-                      html: '<p>Marketing copy.</p>',
-                      excerpt: 'Marketing copy.',
-                      visibility: 'public',
-                      published_at: '2024-02-09T19:00:00.000Z',
-                      updated_at: '2024-02-09T19:00:00.000Z',
-                      tags: [{ name: '#no-search-index', slug: 'hash-no-search-index', visibility: 'internal' }],
-                      authors: [{ name: 'Test Author' }]
-                    }
-                  }
-                : id === 'gated-post-1'
-                ? {
-                    success: true,
-                    data: {
-                      id: 'gated-post-1',
-                      title: 'Members Post',
-                      slug: 'members-post',
-                      html: '<p>SECRET_PROTECTED_BODY for members only.</p>',
-                      plaintext: 'SECRET_PROTECTED_BODY for members only.',
-                      excerpt: 'A public teaser.',
-                      visibility: 'members',
-                      published_at: '2024-02-09T19:00:00.000Z',
-                      updated_at: '2024-02-09T19:00:00.000Z',
-                      tags: [{ name: 'premium', slug: 'premium' }],
-                      authors: [{ name: 'Test Author' }]
-                    }
-                  }
-                : {
-                    success: true,
-                    data: {
-                      id: 'test-post-1',
-                      title: 'Test Post 1',
-                      slug: 'test-post-1',
-                      html: '<p>Test content</p>',
-                      excerpt: 'Test excerpt',
-                      visibility: 'public',
-                      published_at: '2024-02-09T19:00:00.000Z',
-                      updated_at: '2024-02-09T19:00:00.000Z',
-                      tags: [{ name: 'test-tag' }],
-                      authors: [{ name: 'Test Author' }]
-                    }
-                  }
-          })
-        })
-      }
-    }))
+        }
+      };
+    })
   };
 });
 
@@ -116,20 +118,22 @@ const mockCreate = vi.fn().mockResolvedValue(true);
 
 vi.mock('typesense', () => {
   return {
-    Client: vi.fn().mockImplementation(() => ({
-      collections: (name?: string) => {
-        if (name) {
+    Client: vi.fn().mockImplementation(function () {
+      return {
+        collections: (name?: string) => {
+          if (name) {
+            return {
+              delete: vi.fn().mockResolvedValue(true),
+              documents: () => mockDocuments
+            };
+          }
           return {
-            delete: vi.fn().mockResolvedValue(true),
-            documents: () => mockDocuments
+            retrieve: vi.fn().mockResolvedValue([]),
+            create: mockCreate
           };
         }
-        return {
-          retrieve: vi.fn().mockResolvedValue([]),
-          create: mockCreate
-        };
-      }
-    }))
+      };
+    })
   };
 });
 
