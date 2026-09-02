@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-09-02
+
+### Fixed
+- **Opening the search from a theme's popup navigation left the panel visible
+  but unusable.** Readers could see the search but never type into it: the
+  input did not keep the caret. Loading `#/search` directly or using the
+  keyboard shortcut worked, which is what made it look like a search bug rather
+  than a focus one. Themes commonly focus-trap their popup navigation while it
+  is open, and a nav link pointing at Ghost's `#/search` magic URL changes the
+  hash without unloading the page — so none of the trap's release paths (close
+  button, Escape, page load) ever fire and the trap stays armed. Every surface
+  renders into the widget's shadow root in the same document, so the trap saw
+  the `focusin` and pulled the caret straight back into the navigation. Each
+  surface is now promoted into the top layer with `<dialog>.showModal()`: the
+  browser makes everything outside the top layer inert, so the trap's own
+  `focus()` call becomes a no-op and the caret stays in the search field. The
+  theme's accessibility code keeps working exactly as its author intended —
+  nothing patches or disables it. Visibility remains owned by the
+  `mp-search-hidden` class and the new calls no-op where `<dialog>` is
+  unavailable (Safari before 15.4), so those browsers behave as they did
+  before, and native `Esc` is routed back through the widget's own close path
+  so the scroll lock and the URL hash stay in step. One visible consequence:
+  top-layer stacking belongs to the browser, so the overlay now sits above
+  Ghost's subscribe button on desktop, where `z-index: 3999997` had placed it
+  below.
+
+### Changed
+- **Runtime dependency upgrades.** `@ts-ghost/content-api` 4.2.0 → 5.0.0 (core),
+  `@netlify/functions` 2.8.2 → 6.0.0 (webhook handler), and `ora` 8 → 9 (CLI).
+  Each is a major upgrade of a published package's dependency; none required a
+  source change, and lint, typecheck, the full suite and the builds pass
+  unchanged.
+- **The dev toolchain moved to Node 22.** `.nvmrc` pinned Node 20, which jsdom
+  30 does not support (`^22.22.2 || ^24.15.0 || >=26`) — its bundled undici
+  failed on load and took the search-ui suite down with it. Contributors and CI
+  now run Node 22. Nothing in the published packages changed, so this affects
+  only how the repository is built and tested.
+- **Test tooling refreshed**: vitest 1 → 4 (class mocks now have to be
+  constructible, so the mocked `TSGhostContentAPI`, Typesense `Client` and
+  `GhostTypesenseManager` return their instance from a `function`
+  implementation), jsdom 24 → 30, cssnano 6 → 9, rollup-plugin-visualizer 5 →
+  7, inquirer 12 → 14, globals 16 → 17, plus eslint, rollup, `@types/node` and
+  `@typescript-eslint/*` minors.
+
 ## [2.3.0] - 2026-08-21
 
 ### Added
