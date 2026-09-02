@@ -37,7 +37,7 @@
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-replace": "^6.0.3",
     "@rollup/plugin-terser": "^0.4.4",
-    "cssnano": "^6.0.3",
+    "cssnano": "^9.0.1",
     "eslint": "^10.9.1",
     "jsdom": "^24.0.0",
     "postcss": "^8.5.26",
