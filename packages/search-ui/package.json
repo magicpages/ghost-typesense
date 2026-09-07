@@ -30,7 +30,7 @@
     "directory": "packages/search-ui"
   },
   "dependencies": {
-    "typesense": "3.0.6"
+    "typesense": "^3.0.6"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
