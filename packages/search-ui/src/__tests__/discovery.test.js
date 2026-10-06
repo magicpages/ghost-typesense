@@ -13,9 +13,11 @@ afterEach(() => {
 // Minimal layout context. The discovery factory only touches the core through
 // this object; for rendering we need the prefix, an HTML-attribute escaper, and
 // the translation helper (echoing the key is enough for assertions).
-function makeCtx() {
+function makeCtx(config = {}) {
   return {
     prefix: 'mp-search',
+    // The core's resolved config; empty means every option is at its default.
+    config,
     escapeHtmlAttr: (v) =>
       String(v ?? '')
         .replace(/&/g, '&amp;')
@@ -32,8 +34,8 @@ function makeCtx() {
 
 // Mount the layout into a real shadow root (so getElementById works the same as
 // in the live widget) and return the layout plus its cached preview element.
-function mountDiscovery() {
-  const ctx = makeCtx();
+function mountDiscovery(config) {
+  const ctx = makeCtx(config);
   const layout = createDiscoveryLayout(ctx);
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -450,5 +452,50 @@ describe('discovery gated results', () => {
     expect(shadow.querySelector('.mp-search-gated-badge')).toBeNull();
     expect(shadow.querySelector('.mp-search-discovery-gated-notice')).toBeNull();
     expect(shadow.querySelector('.mp-search-discovery-card').hasAttribute('data-gated')).toBe(false);
+  });
+});
+
+describe('discovery presentation options', () => {
+  // The date's own wording is locale-dependent, so read the parts by position:
+  // each part is a span, joined by aria-hidden dot separators.
+  const parts = (el) => [...el.children]
+    .filter((c) => !c.classList.contains('mp-search-discovery-dot'))
+    .map((c) => c.textContent);
+  const dots = (el) => el.querySelectorAll('.mp-search-discovery-dot').length;
+  const date = new Date(1700000000000).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric'
+  });
+
+  function render(config) {
+    const { layout, shadow } = mountDiscovery(config);
+    layout.renderResults(modelWith(null), { found: 1 });
+    return {
+      card: shadow.querySelector('.mp-search-discovery-card-meta'),
+      byline: shadow.querySelector('.mp-search-discovery-preview-byline')
+    };
+  }
+
+  it('dates the card and the preview byline by default', () => {
+    const { card, byline } = render();
+    expect(parts(card)).toEqual(['Gardening', date]);
+    expect(dots(card)).toBe(1);
+    expect(parts(byline)).toEqual(['byLabel Ada Lovelace', date]);
+    expect(dots(byline)).toBe(1);
+  });
+
+  it('drops both dates and their separators when showDates is false', () => {
+    const { card, byline } = render({ showDates: false });
+    expect(parts(card)).toEqual(['Gardening']);
+    expect(dots(card)).toBe(0);
+    expect(parts(byline)).toEqual(['byLabel Ada Lovelace']);
+    expect(dots(byline)).toBe(0);
+  });
+
+  // showGroupLabels belongs to the palette; the rail keeps its headings.
+  it('keeps the facet headings when showGroupLabels is false', () => {
+    const { layout, shadow } = mountDiscovery({ showGroupLabels: false });
+    layout.renderFacets([{ field_name: 'tags.name', counts: [{ value: 'Gardening', count: 2 }] }], {});
+    const titles = [...shadow.querySelectorAll('.mp-search-discovery-facet-title')].map((t) => t.textContent);
+    expect(titles).toEqual(['facetTopicsLabel']);
   });
 });

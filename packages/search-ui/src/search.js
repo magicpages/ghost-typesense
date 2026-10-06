@@ -445,6 +445,12 @@ import Typesense from 'typesense';
                 // modal) or an alternative layout loaded on demand ('palette',
                 // 'discovery'). Unknown values fall back to 'modal'.
                 uiStyle: ALT_LAYOUTS.includes(defaultConfig.uiStyle) ? defaultConfig.uiStyle : 'modal',
+                // Presentation toggles, on unless explicitly set to false so a
+                // config written before they existed renders exactly as before.
+                // showDates applies to every layout; showGroupLabels only to the
+                // palette's group headings.
+                showDates: defaultConfig.showDates !== false,
+                showGroupLabels: defaultConfig.showGroupLabels !== false,
                 // Opt in to reading the reader's own membership from Ghost, so a
                 // badge is only shown for content they actually cannot open.
                 // Off by default: the widget is also embedded on sites that have
@@ -2312,7 +2318,7 @@ import Typesense from 'typesense';
                 : `<span class="${CSS_PREFIX}-row-thumb ${CSS_PREFIX}-row-thumb-empty" aria-hidden="true">${letter}</span>`;
 
             const metaParts = [];
-            const date = this.relativeDate(doc.published_at);
+            const date = this.config.showDates === false ? '' : this.relativeDate(doc.published_at);
             if (date) metaParts.push(`<span>${this.escapeHtmlAttr(date)}</span>`);
             const primaryTag = Array.isArray(doc.tags) && doc.tags.length ? doc.tags[0] : '';
             if (primaryTag) metaParts.push(`<span class="${CSS_PREFIX}-row-meta-tag">${this.escapeHtmlAttr(primaryTag)}</span>`);

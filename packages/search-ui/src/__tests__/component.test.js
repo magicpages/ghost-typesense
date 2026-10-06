@@ -504,6 +504,55 @@ describe('result templates', () => {
   });
 });
 
+describe('modal presentation options', () => {
+  const publishedAt = Date.now() - 3 * 86400000;
+  const hit = (doc = {}) => ({
+    document: {
+      id: 'p1',
+      title: 'Tomatoes',
+      published_at: publishedAt,
+      tags: ['Garden'],
+      authors: ['Jane Doe'],
+      ...doc
+    }
+  });
+  const metaOf = (el, h) => parse(el.renderListItem(h, 'Tomatoes', 'Grow them', 'public'))
+    .querySelector('.mp-search-row-meta');
+  const parts = (meta) => [...meta.children]
+    .filter((c) => !c.classList.contains('mp-search-row-meta-sep'))
+    .map((c) => c.textContent);
+  const seps = (meta) => meta.querySelectorAll('.mp-search-row-meta-sep').length;
+
+  it('dates the list row by default', () => {
+    const el = mountWithConfig();
+    const meta = metaOf(el, hit());
+    expect(parts(meta)).toEqual([el.relativeDate(publishedAt), 'Garden', 'Jane Doe']);
+    expect(seps(meta)).toBe(2);
+  });
+
+  it('drops the date and its separator when showDates is false', () => {
+    const meta = metaOf(mountWithConfig({ showDates: false }), hit());
+    expect(parts(meta)).toEqual(['Garden', 'Jane Doe']);
+    expect(seps(meta)).toBe(1);
+    expect(meta.firstElementChild.classList.contains('mp-search-row-meta-sep')).toBe(false);
+  });
+
+  it('omits the meta line when the date was its only part', () => {
+    const el = mountWithConfig({ showDates: false });
+    expect(metaOf(el, hit({ tags: [], authors: [] }))).toBeNull();
+  });
+
+  // showGroupLabels belongs to the palette; the modal's facet headings stay.
+  it('keeps the facet headings when showGroupLabels is false', () => {
+    const el = mountWithConfig({
+      showGroupLabels: false,
+      facets: [{ field: 'tags.name', label: 'Topics' }]
+    });
+    el.renderFacets([{ field_name: 'tags.name', counts: [{ value: 'Ghost', count: 4 }] }]);
+    expect(el.facetsContainer.querySelector('.mp-search-facet-group-label').textContent).toBe('Topics');
+  });
+});
+
 describe('highlight snippet selection', () => {
   // Regression for the body-only-match case: the term matched in the body
   // (plaintext) but not in the excerpt. The preview must show the highlighted

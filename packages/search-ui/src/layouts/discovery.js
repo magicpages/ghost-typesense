@@ -191,7 +191,7 @@ export default function createDiscoveryLayout(ctx) {
       const authorsText = m.authors.map((a) => esc(a)).join(', ');
       byline.push(`<span>${esc(ctx.t('byLabel'))} ${authorsText}</span>`);
     }
-    const dateStr = formatDate(m.publishedAt);
+    const dateStr = ctx.config.showDates === false ? '' : formatDate(m.publishedAt);
     if (dateStr) byline.push(`<span>${esc(dateStr)}</span>`);
     if (m.showBadge) byline.push(gatedBadge(m.access));
     if (byline.length) {
@@ -626,7 +626,7 @@ export default function createDiscoveryLayout(ctx) {
           for (const t of tags) {
             metaParts.push(`<span class="${P}-discovery-tag">${esc(t)}</span>`);
           }
-          const dateStr = formatDate(m.publishedAt);
+          const dateStr = ctx.config.showDates === false ? '' : formatDate(m.publishedAt);
           if (dateStr) metaParts.push(`<span>${esc(dateStr)}</span>`);
           if (m.showBadge) metaParts.push(gatedBadge(m.access));
           const metaHtml = metaParts.join(`<span class="${P}-discovery-dot" aria-hidden="true">·</span>`);

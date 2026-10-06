@@ -102,6 +102,8 @@ window.__MP_SEARCH_CONFIG__ = {
 | `memberEndpoint` | `String` | No | `'/members/api/member'` | Path of Ghost's member-session endpoint, for a subdirectory install or a path-rewriting proxy |
 | `uiStyle` | `String` | No | `'modal'` | Overall layout: `'modal'`, `'palette'`, or `'discovery'` (see [UI layouts](#ui-layouts)) |
 | `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
+| `showDates` | `Boolean` | No | `true` | Set to `false` to hide post dates in every layout (modal and palette rows, discovery rows and preview) |
+| `showGroupLabels` | `Boolean` | No | `true` | Palette only: set to `false` to drop the group headings (Posts, Tags, Authors, Recent searches); groups stay labelled for screen readers |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
 | `connectionTimeoutSeconds` | `Number` | No | `5` | How long a single search request may take before the browser aborts it (see [Connection tuning](#connection-tuning)) |
 | `numRetries` | `Number` | No | typesense-js default | How many times a failed request is retried across your nodes |
@@ -338,7 +340,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `uiStyle` | What it is |
 |-----------|------------|
 | `'modal'` *(default)* | A centered modal with rich result rows: a feature-image thumbnail (tinted initial fallback), highlighted title, one-line excerpt, and a metadata line (date · primary tag · author). Supports `template: 'list' \| 'grid'` (see [Result templates](#result-templates)). |
-| `'palette'` | A dense, keyboard-first command palette (⌘K / Cmd-K idiom): compact rows grouped into Posts / Tags / Authors, a localStorage-backed "Recent searches" list, and a footer command bar. Optimised for speed. |
+| `'palette'` | A dense, keyboard-first command palette (⌘K / Cmd-K idiom): compact rows grouped into Posts / Tags / Authors (post rows show primary tag · author · date), a localStorage-backed "Recent searches" list, and a footer command bar. Optimised for speed. |
 | `'discovery'` | A two-pane content explorer: a results list on the left, a live preview pane on the right (feature image, full excerpt, date, tags, author, "Read post" link), and a facet rail. Best for image-led, browse-heavy publications. |
 
 ### How the layouts load (one script, no wasted bytes)

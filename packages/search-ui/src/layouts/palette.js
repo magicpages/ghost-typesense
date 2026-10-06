@@ -251,6 +251,13 @@ export default function createPaletteLayout(ctx) {
   }
 
   // --- Markup builders for the two surfaces ---
+  // A group's visible heading, or nothing when the publisher turned headings
+  // off. The group wrapper keeps its aria-label either way, so screen readers
+  // still announce the grouping.
+  function groupLabelHtml(inner) {
+    return ctx.config.showGroupLabels === false ? '' : `<div class="${L}-group-label">${inner}</div>`;
+  }
+
   function recentSurfaceHtml() {
     flatItems = [];
     if (!recent || recent.length === 0) {
@@ -275,7 +282,7 @@ export default function createPaletteLayout(ctx) {
 
     return `
       <div class="${L}-group" role="group" aria-label="${ctx.t('paletteRecentGroup')}">
-        <div class="${L}-group-label">${ctx.t('paletteRecentGroup')}</div>
+        ${groupLabelHtml(ctx.t('paletteRecentGroup'))}
         ${rows.join('')}
       </div>`;
   }
@@ -285,10 +292,12 @@ export default function createPaletteLayout(ctx) {
     const idx = flatItems.length - 1;
 
     const tag = Array.isArray(m.tags) && m.tags.length ? String(m.tags[0]) : '';
-    const date = relativeDate(m.publishedAt);
+    const author = Array.isArray(m.authors) && m.authors.length ? String(m.authors[0]) : '';
+    const date = ctx.config.showDates === false ? '' : relativeDate(m.publishedAt);
 
     const metaParts = [];
     if (tag) metaParts.push(`<span class="${L}-meta-chip">${ctx.escapeHtmlAttr(tag)}</span>`);
+    if (author) metaParts.push(`<span class="${L}-meta-author">${ctx.escapeHtmlAttr(author)}</span>`);
     if (date) metaParts.push(`<span class="${L}-meta-date">${ctx.escapeHtmlAttr(date)}</span>`);
 
     // One badge per gate: any signed-up reader, or paying readers only. Both
@@ -435,9 +444,8 @@ export default function createPaletteLayout(ctx) {
     const postRows = currentModel.map((m) => postRowHtml(m));
     sections.push(`
       <div class="${L}-group" role="group" aria-label="${ctx.t('palettePostsGroup')}">
-        <div class="${L}-group-label">${ctx.t('palettePostsGroup')}
-          <span class="${L}-group-count">${currentModel.length}</span>
-        </div>
+        ${groupLabelHtml(`${ctx.t('palettePostsGroup')}
+          <span class="${L}-group-count">${currentModel.length}</span>`)}
         ${postRows.join('')}
       </div>`);
 
@@ -449,7 +457,7 @@ export default function createPaletteLayout(ctx) {
         .map((c) => facetRowHtml('tag', '#', c.value, c.count, tagFacet.field_name));
       sections.push(`
         <div class="${L}-group" role="group" aria-label="${ctx.t('paletteTagsGroup')}">
-          <div class="${L}-group-label">${ctx.t('paletteTagsGroup')}</div>
+          ${groupLabelHtml(ctx.t('paletteTagsGroup'))}
           ${rows.join('')}
         </div>`);
     }
@@ -462,7 +470,7 @@ export default function createPaletteLayout(ctx) {
         .map((c) => facetRowHtml('author', '@', c.value, c.count, authorFacet.field_name));
       sections.push(`
         <div class="${L}-group" role="group" aria-label="${ctx.t('paletteAuthorsGroup')}">
-          <div class="${L}-group-label">${ctx.t('paletteAuthorsGroup')}</div>
+          ${groupLabelHtml(ctx.t('paletteAuthorsGroup'))}
           ${rows.join('')}
         </div>`);
     }

@@ -364,7 +364,7 @@
   padding: 0 1px;
 }
 
-/* Inline meta — tag · date · badge */
+/* Inline meta — tag · author · date · badge */
 .mp-search-palette .mp-search-palette-row-meta {
   flex: 0 0 auto;
   display: flex;
@@ -380,6 +380,14 @@
   border-radius: calc(0.5 * var(--mp-rem));
   background: var(--color-surface-hover);
   font-size: calc(0.6875 * var(--mp-rem));
+}
+
+/* The meta column never shrinks, so cap the author name or a long one would
+   squeeze the title instead. */
+.mp-search-palette .mp-search-palette-meta-author {
+  max-width: calc(10 * var(--mp-rem));
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mp-search-palette .mp-search-palette-meta-date {

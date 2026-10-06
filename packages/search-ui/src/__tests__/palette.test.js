@@ -18,9 +18,11 @@ afterEach(() => {
 // Minimal layout context. The palette factory only touches the core through
 // this object; for rendering we need the prefix, an HTML-attribute escaper, and
 // the translation helper (echoing the key is enough for assertions).
-function makeCtx() {
+function makeCtx(config = {}) {
   return {
     prefix: 'mp-search',
+    // The core's resolved config; empty means every option is at its default.
+    config,
     escapeHtmlAttr: (v) =>
       String(v ?? '')
         .replace(/&/g, '&amp;')
@@ -39,8 +41,8 @@ function makeCtx() {
   };
 }
 
-function mountPalette() {
-  const ctx = makeCtx();
+function mountPalette(config) {
+  const ctx = makeCtx(config);
   const layout = createPaletteLayout(ctx);
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -249,5 +251,120 @@ describe('palette gated rows', () => {
     expect(row.querySelector('.mp-search-palette-badge')).toBeNull();
     expect(row.hasAttribute('data-gated')).toBe(false);
     expect(row.classList.contains('mp-search-result-gated')).toBe(false);
+  });
+});
+
+// A public post as normalizeHit hands it to the layout.
+function postModel(overrides = {}) {
+  return [
+    {
+      id: 'p1',
+      position: 0,
+      url: '/post/',
+      title: 'A post',
+      titleHtml: 'A post',
+      ariaTitle: 'A post',
+      excerptHtml: 'Body teaser',
+      isGated: false,
+      access: 'public',
+      showBadge: false,
+      visibility: 'public',
+      featureImage: null,
+      tags: ['Gardening'],
+      authors: ['Jane Doe'],
+      publishedAt: 1700000000000,
+      ...overrides
+    }
+  ];
+}
+
+// Tag and author facet counts, so the surface draws all three result groups.
+const facetCounts = [
+  { field_name: 'tags.name', counts: [{ value: 'Gardening', count: 2 }] },
+  { field_name: 'authors', counts: [{ value: 'Jane Doe', count: 1 }] }
+];
+
+function metaFor(model, config) {
+  const { layout, shadow } = mountPalette(config);
+  layout.renderResults(model, { found: 1, query: 'composting' });
+  return shadow.querySelector('.mp-search-palette-row-post .mp-search-palette-row-meta');
+}
+
+describe('palette post row meta', () => {
+  it('shows the tag, first author and date, in that order', () => {
+    const meta = metaFor(postModel({ authors: ['Jane Doe', 'John Roe'] }));
+    const classes = [...meta.children].map((el) => el.className);
+    expect(classes).toEqual([
+      'mp-search-palette-meta-chip',
+      'mp-search-palette-meta-author',
+      'mp-search-palette-meta-date'
+    ]);
+    expect(meta.querySelector('.mp-search-palette-meta-author').textContent).toBe('Jane Doe');
+  });
+
+  it('renders an author name as text, not markup', () => {
+    const author = metaFor(postModel({ authors: ['<b>x</b>'] }))
+      .querySelector('.mp-search-palette-meta-author');
+    expect(author.textContent).toBe('<b>x</b>');
+    expect(author.querySelector('b')).toBeNull();
+  });
+
+  it('leaves a row without authors as it was', () => {
+    const meta = metaFor(postModel({ authors: [] }));
+    expect(meta.querySelector('.mp-search-palette-meta-author')).toBeNull();
+    expect([...meta.children].map((el) => el.className)).toEqual([
+      'mp-search-palette-meta-chip',
+      'mp-search-palette-meta-date'
+    ]);
+  });
+
+  it('drops the date when showDates is false', () => {
+    const meta = metaFor(postModel(), { showDates: false });
+    expect(meta.querySelector('.mp-search-palette-meta-date')).toBeNull();
+    expect(meta.querySelector('.mp-search-palette-meta-chip')).not.toBeNull();
+    expect(meta.querySelector('.mp-search-palette-meta-author')).not.toBeNull();
+  });
+});
+
+describe('palette group labels', () => {
+  function resultsSurface(config) {
+    const { layout, shadow } = mountPalette(config);
+    layout.renderFacets(facetCounts);
+    layout.renderResults(postModel(), { found: 1, query: 'composting' });
+    return shadow.getElementById('mp-search-palette-listbox');
+  }
+
+  function recentSurface(config) {
+    window.localStorage.setItem('mp-search-palette-recent', JSON.stringify(['composting']));
+    const { layout, shadow } = mountPalette(config);
+    layout.renderInitial();
+    return shadow.getElementById('mp-search-palette-listbox');
+  }
+
+  const groupNames = (surface) =>
+    [...surface.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'));
+
+  it('heads every group by default', () => {
+    const labels = [...resultsSurface().querySelectorAll('.mp-search-palette-group-label')];
+    expect(labels.map((l) => l.textContent.replace(/\s+/g, ' ').trim())).toEqual([
+      'palettePostsGroup 1',
+      'paletteTagsGroup',
+      'paletteAuthorsGroup'
+    ]);
+    expect(recentSurface().querySelector('.mp-search-palette-group-label').textContent)
+      .toBe('paletteRecentGroup');
+  });
+
+  it('drops the headings but keeps each group labelled when showGroupLabels is false', () => {
+    const results = resultsSurface({ showGroupLabels: false });
+    expect(results.querySelector('.mp-search-palette-group-label')).toBeNull();
+    expect(results.querySelector('.mp-search-palette-group-count')).toBeNull();
+    expect(groupNames(results)).toEqual(['palettePostsGroup', 'paletteTagsGroup', 'paletteAuthorsGroup']);
+    // The rows themselves are untouched.
+    expect(results.querySelectorAll('[role="option"]')).toHaveLength(3);
+
+    const recent = recentSurface({ showGroupLabels: false });
+    expect(recent.querySelector('.mp-search-palette-group-label')).toBeNull();
+    expect(groupNames(recent)).toEqual(['paletteRecentGroup']);
   });
 });
