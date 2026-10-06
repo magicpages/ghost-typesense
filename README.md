@@ -79,6 +79,8 @@ The widget ships three interchangeable layouts, selected with `uiStyle`:
 </script>
 ```
 
+To trim result rows, set `showDates: false` to hide post dates in every layout, or `showGroupLabels: false` to drop the palette's group headings (Posts, Tags, Authors, Recent searches). Both default to `true`.
+
 The install line is identical for every layout — one `<script>` tag. Only the layout you choose is downloaded by the reader. See the [search-ui README](packages/search-ui/README.md#ui-layouts) for the full layout, keyboard, theming, facet, and i18n reference.
 
 ### 3. Initial Content Sync

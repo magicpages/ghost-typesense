@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`showDates` hides post dates.** Not every publication wants a timestamp on
+  each result — evergreen guides look stale next to "3 years ago". Setting
+  `showDates: false` removes the date from modal and palette rows, discovery
+  rows and the discovery preview, without leaving a dangling `·` separator.
+  It defaults to `true`, so existing configs render exactly as before.
+- **`showGroupLabels` hides the palette's group headings.** The palette's
+  `Posts`, `Tags`, `Authors` and `Recent searches` headings could not be turned
+  off: an empty i18n string falls back to the English default, and the widget's
+  shadow root keeps site CSS out. Setting `showGroupLabels: false` drops them
+  for a denser list. Each group keeps its `role="group"` and `aria-label`, so
+  screen readers still announce the grouping. Palette only; the modal and
+  discovery layouts ignore it.
+- **Palette post rows show the author.** Searching part of an author's name
+  finds their posts, but nothing on the row said why it matched unless facets
+  were enabled. Each post row now shows its first author after the tag chip,
+  as the modal's list row already did. Rows without an author are unchanged.
+
 ## [2.3.1] - 2026-09-02
 
 ### Fixed
