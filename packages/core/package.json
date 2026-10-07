@@ -27,7 +27,7 @@
     "@magicpages/ghost-typesense-config": "^2.4.0",
     "@ts-ghost/content-api": "5.0.0",
     "@ts-ghost/core-api": "^7.0.0",
-    "typesense": "^1.7.2",
+    "typesense": "^3.0.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {
