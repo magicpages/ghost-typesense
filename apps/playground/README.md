@@ -37,6 +37,7 @@ npm run typesense:down --workspace @magicpages/ghost-typesense-playground
 - **Font** — the `fontFamily` option: `system` (default) / `theme` / `sans` / `serif` / `mono`. With `theme`, the widget picks up this page's own body font (an Inter stack).
 - **Ghost custom fonts** — defines `--gh-font-heading` (Georgia) and `--gh-font-body` (Verdana) on `:root`, as `{{ghost_head}}` does when a custom font is picked in Ghost, so `theme` can be checked against both cases.
 - **Facets** — reader-facing tag and author filters.
+- **Author profiles** — `showAuthorProfiles`; the playground injects a Ghost-style search script tag and serves a mock author index at `/ghost/api/content/search-index/authors/`.
 - **Suggestions** — pinned + common search terms shown before typing.
 - **Semantic search** — appends the embedding field to the query (the mock returns the same results, but you can confirm the request shape).
 - **Analytics** — emitted `search` / `zero_result` / `click` events are captured and shown in the on-page **Events** log, along with the queries they carry.

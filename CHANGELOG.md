@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Keyboard hints and the palette's `#` / `@` icons stay monospace. The modal's
   and discovery's search fields follow any chosen font; with `'system'` they
   keep the browser's input font, as before.
+- **`showAuthorProfiles` adds an Authors section linking to profile pages.**
+  Searching for a writer's name only ever found their posts; there was no way
+  to reach the author's own page from search. With the option on, authors whose
+  name matches the query (word-prefix, case- and accent-insensitive, at most
+  three) appear as profile links: above the results in the modal, as an
+  Authors group above Posts in the palette, and as a strip above the results
+  in discovery, where byline names also become profile links. The author list
+  comes from Ghost's own search index endpoint, loaded once on first open and
+  cached for the session; the Content API key and admin URL are read from
+  Ghost's search script tag before it is removed, or set with
+  `ghostContentApiKey` / `ghostUrl`. If the list cannot be loaded the section
+  is simply left out. The option defaults to `false`.
 
 ### Fixed
 - **Opening search no longer shifts the page sideways.** On desktops with

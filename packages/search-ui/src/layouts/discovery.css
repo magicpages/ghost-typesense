@@ -393,6 +393,67 @@
   margin: 0;
 }
 
+/* Author profiles (showAuthorProfiles): a strip above the result list. The
+   column wrapper only exists when the option is on, and takes over the
+   list's place in the grid and its divider. */
+.mp-search-discovery-results-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+}
+
+.mp-search-discovery-results-col > .mp-search-discovery-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-right: none;
+}
+
+.mp-search-discovery-authors {
+  flex: 0 0 auto;
+  padding: calc(0.75 * var(--mp-rem)) calc(0.75 * var(--mp-rem)) calc(0.625 * var(--mp-rem));
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mp-search-discovery-authors-title {
+  margin: 0 0 calc(0.5 * var(--mp-rem));
+  color: var(--color-text-secondary);
+  font-size: calc(0.6875 * var(--mp-rem));
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mp-search-discovery-authors-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.375 * var(--mp-rem));
+}
+
+.mp-search-discovery-author-link {
+  font-size: calc(0.8125 * var(--mp-rem));
+}
+
+.mp-search-discovery-author-link .mp-search-author-avatar {
+  width: calc(1.5 * var(--mp-rem));
+  height: calc(1.5 * var(--mp-rem));
+  font-size: calc(0.6875 * var(--mp-rem));
+}
+
+.mp-search-discovery-byline-author {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 2px;
+}
+
+.mp-search-discovery-byline-author:hover,
+.mp-search-discovery-byline-author:focus-visible {
+  color: var(--accent-color);
+  text-decoration-color: currentColor;
+}
+
 .mp-search-discovery-card {
   display: block;
   width: 100%;
@@ -744,9 +805,14 @@
     min-width: calc(11 * var(--mp-rem));
   }
 
-  .mp-search-discovery-results {
+  .mp-search-discovery-results,
+  .mp-search-discovery-results-col {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .mp-search-discovery-results-col > .mp-search-discovery-results {
+    border-bottom: none;
   }
 
   .mp-search-discovery-preview {

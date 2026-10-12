@@ -31,6 +31,9 @@ export default function createDiscoveryLayout(ctx) {
   // Last facet counts + selection, kept so the rail can re-render values that
   // a narrowing selection removed from the live counts.
   let lastFacetCounts = [];
+  // The query the author strip was last drawn for, so a late-arriving author
+  // list can be applied to it.
+  let authorQuery = '';
 
   // ---- Pure helpers -------------------------------------------------------
 
@@ -185,10 +188,11 @@ export default function createDiscoveryLayout(ctx) {
     // Title — trusted highlight markup.
     parts.push(`<h2 class="${P}-discovery-preview-title">${m.titleHtml}</h2>`);
 
-    // Byline: author · date · members badge.
+    // Byline: author · date · members badge. With showAuthorProfiles on, a
+    // name Ghost lists as an author links to their profile.
     const byline = [];
     if (Array.isArray(m.authors) && m.authors.length) {
-      const authorsText = m.authors.map((a) => esc(a)).join(', ');
+      const authorsText = m.authors.map((a) => authorBylineHtml(a)).join(', ');
       byline.push(`<span>${esc(ctx.t('byLabel'))} ${authorsText}</span>`);
     }
     const dateStr = ctx.config.showDates === false ? '' : formatDate(m.publishedAt);
@@ -237,6 +241,38 @@ export default function createDiscoveryLayout(ctx) {
     }
 
     refs.preview.innerHTML = parts.join('');
+  }
+
+  function authorBylineHtml(name) {
+    const profile = typeof ctx.findAuthorProfile === 'function' ? ctx.findAuthorProfile(name) : null;
+    if (!profile) return esc(name);
+    return `<a href="${esc(profile.url)}" class="${P}-discovery-byline-author">${esc(name)}</a>`;
+  }
+
+  // ---- Author profiles strip (showAuthorProfiles) -------------------------
+
+  // Authors matching the query, as links above the results list. They sit
+  // outside the listbox (they are links, not options), so they are reached
+  // with Tab rather than the arrow keys that move through the posts.
+  function renderAuthorStrip(query) {
+    if (!refs.authors) return;
+    const q = (query || '').trim();
+    authorQuery = q;
+    const profiles = q && typeof ctx.getAuthorProfiles === 'function' ? ctx.getAuthorProfiles(q) : [];
+    if (!profiles.length) {
+      refs.authors.innerHTML = '';
+      refs.authors.classList.add(`${P}-hidden`);
+      return;
+    }
+    refs.authors.innerHTML =
+      `<p class="${P}-discovery-authors-title" aria-hidden="true">${esc(ctx.t('authorsGroupLabel'))}</p>`
+      + `<div class="${P}-discovery-authors-list">`
+      + profiles
+        .map((a) => `<a href="${esc(a.url)}" class="${P}-author-link ${P}-discovery-author-link">`
+          + `${a.avatarHtml}<span class="${P}-author-name">${esc(a.name)}</span></a>`)
+        .join('')
+      + `</div>`;
+    refs.authors.classList.remove(`${P}-hidden`);
   }
 
   // ---- Facet rail ---------------------------------------------------------
@@ -354,7 +390,10 @@ export default function createDiscoveryLayout(ctx) {
             </div>
             <div class="${P}-discovery-body">
               <aside id="${P}-facets" class="${P}-discovery-rail ${P}-facets" role="group" aria-label="${esc(ctx.t('ariaFacetsLabel'))}"></aside>
-              <div id="${P}-discovery-results" class="${P}-discovery-results" role="listbox" tabindex="-1" aria-label="${esc(ctx.t('ariaResultsLabel'))}"></div>
+              ${ctx.config.showAuthorProfiles ? `<div class="${P}-discovery-results-col">
+                <div class="${P}-discovery-authors ${P}-hidden" role="group" aria-label="${esc(ctx.t('authorsGroupLabel'))}"></div>
+                <div id="${P}-discovery-results" class="${P}-discovery-results" role="listbox" tabindex="-1" aria-label="${esc(ctx.t('ariaResultsLabel'))}"></div>
+              </div>` : `<div id="${P}-discovery-results" class="${P}-discovery-results" role="listbox" tabindex="-1" aria-label="${esc(ctx.t('ariaResultsLabel'))}"></div>`}
               <section id="${P}-discovery-preview" class="${P}-discovery-preview" aria-live="polite" aria-label="${esc(ctx.t('discoveryPreviewLabel'))}"></section>
             </div>
           </div>
@@ -369,6 +408,7 @@ export default function createDiscoveryLayout(ctx) {
       refs.preview = root.getElementById(`${P}-discovery-preview`);
       refs.facets = root.getElementById(`${P}-facets`);
       refs.count = root.querySelector(`.${P}-discovery-count`);
+      refs.authors = root.querySelector(`.${P}-discovery-authors`);
       // Exposed for parity with the core's expectations.
       this.input = refs.input;
       this.facetsContainer = refs.facets;
@@ -498,6 +538,7 @@ export default function createDiscoveryLayout(ctx) {
       model = [];
       selectedIndex = -1;
       lastFacetCounts = [];
+      renderAuthorStrip('');
     },
 
     focusInput() {
@@ -539,6 +580,7 @@ export default function createDiscoveryLayout(ctx) {
       if (refs.preview) refs.preview.innerHTML = '';
       if (refs.facets) refs.facets.innerHTML = '';
       if (refs.count) refs.count.textContent = '';
+      renderAuthorStrip('');
     },
 
     renderLoading() {
@@ -562,6 +604,7 @@ export default function createDiscoveryLayout(ctx) {
         refs.preview.innerHTML = `<div class="${P}-discovery-preview-empty">${esc(ctx.t('discoveryNoSelection'))}</div>`;
       }
       if (refs.count) refs.count.textContent = q ? `0 ${ctx.t('resultsLabel')}` : '';
+      renderAuthorStrip(q);
     },
 
     // Offer a corrected term for a query that matched nothing as typed. Called
@@ -599,6 +642,7 @@ export default function createDiscoveryLayout(ctx) {
       if (refs.preview) refs.preview.innerHTML = '';
       if (refs.facets) refs.facets.innerHTML = '';
       if (refs.count) refs.count.textContent = '';
+      renderAuthorStrip('');
     },
 
     renderResults(nextModel, meta) {
@@ -651,11 +695,20 @@ export default function createDiscoveryLayout(ctx) {
       if (refs.count) {
         refs.count.textContent = `${found} ${found === 1 ? ctx.t('resultLabel') : ctx.t('resultsLabel')}`;
       }
+      renderAuthorStrip(meta && typeof meta.query === 'string' ? meta.query : (refs.input ? refs.input.value : ''));
     },
 
     // The core handles suggestion fetching; discovery surfaces suggestions only
     // through the empty/initial prompt, so there is nothing to re-render here.
     renderSuggestions() {},
+
+    // Ghost's author list arrived after results were painted: add the
+    // matching authors and the byline links to what is on screen.
+    renderAuthorProfiles() {
+      if (!model.length && !(refs.results && refs.results.querySelector(`.${P}-discovery-empty`))) return;
+      renderAuthorStrip(authorQuery);
+      renderPreview();
+    },
 
     renderFacets(counts, selected) {
       lastFacetCounts = Array.isArray(counts) ? counts : [];

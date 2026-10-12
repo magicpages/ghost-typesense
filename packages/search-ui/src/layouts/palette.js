@@ -36,6 +36,7 @@ export default function createPaletteLayout(ctx) {
   //   { kind: 'recent', value }
   //   { kind: 'post', model }   (model is the NormalizedResult)
   //   { kind: 'tag' | 'author', value }
+  //   { kind: 'profile', model }   (an author profile link, showAuthorProfiles)
   let flatItems = [];
   let activeIndex = 0;
 
@@ -46,6 +47,9 @@ export default function createPaletteLayout(ctx) {
   let currentQuery = '';
   // Spelling correction offered for a query that matched nothing, or null.
   let currentSuggestion = null;
+  // Whether the results surface (rather than recent searches or an error)
+  // is on screen, so a late-arriving author list repaints only that.
+  let showingResults = false;
 
   // Recent searches, loaded from localStorage and mirrored in memory.
   let recent = loadRecent();
@@ -236,6 +240,18 @@ export default function createPaletteLayout(ctx) {
       return;
     }
 
+    if (item.kind === 'profile') {
+      const a = item.model;
+      if (!a || !a.url) return;
+      pushRecent(currentQuery);
+      if (newTab) {
+        window.open(a.url, '_blank', 'noopener');
+      } else {
+        window.location.href = a.url;
+      }
+      return;
+    }
+
     if (item.kind === 'post') {
       const m = item.model;
       if (!m || !m.url) return;
@@ -347,6 +363,36 @@ export default function createPaletteLayout(ctx) {
       </div>`;
   }
 
+  // An author profile row: a real link, so Enter, Cmd/Ctrl+Enter and every
+  // kind of click behave as they do on a post row.
+  function profileRowHtml(a) {
+    flatItems.push({ kind: 'profile', model: a });
+    const idx = flatItems.length - 1;
+    return `
+      <a href="${ctx.escapeHtmlAttr(a.url)}" class="${L}-row ${L}-row-profile"
+         id="${L}-row-${idx}" role="option" aria-selected="false"
+         data-index="${idx}" aria-label="${ctx.escapeHtmlAttr(a.name)}">
+        <span class="${L}-row-icon ${L}-row-icon-avatar" aria-hidden="true">${a.avatarHtml}</span>
+        <span class="${L}-row-title">${ctx.escapeHtmlAttr(a.name)}</span>
+        <span class="${L}-row-enter" aria-hidden="true">↵</span>
+      </a>`;
+  }
+
+  // The Authors group above Posts, or nothing. A layout context without
+  // author profiles (an older core) simply has none to show.
+  function profilesGroupHtml() {
+    const profiles = typeof ctx.getAuthorProfiles === 'function'
+      ? ctx.getAuthorProfiles(currentQuery)
+      : [];
+    if (!profiles.length) return '';
+    const label = ctx.t('authorsGroupLabel');
+    return `
+      <div class="${L}-group" role="group" aria-label="${ctx.escapeHtmlAttr(label)}">
+        ${groupLabelHtml(ctx.escapeHtmlAttr(label))}
+        ${profiles.map((a) => profileRowHtml(a)).join('')}
+      </div>`;
+  }
+
   // The spelling-correction prompt, built as a navigable row so Enter picks it
   // up like any other refining row — the reader never has to reach for the
   // mouse to accept a correction.
@@ -425,9 +471,13 @@ export default function createPaletteLayout(ctx) {
   function renderSurface() {
     if (!refs.results) return;
     flatItems = [];
+    showingResults = true;
+
+    // Built first so its rows lead flatItems, matching the on-screen order.
+    const profilesHtml = profilesGroupHtml();
 
     if (!currentModel || currentModel.length === 0) {
-      refs.results.innerHTML = `
+      refs.results.innerHTML = `${profilesHtml}
         <div class="${L}-empty">
           <p class="${L}-empty-title">${ctx.t('paletteNoResultsTitle').replace('{q}', ctx.escapeHtmlAttr(currentQuery))}</p>
           <p class="${L}-empty-sub">${ctx.t('paletteNoResultsSub')}</p>
@@ -438,7 +488,7 @@ export default function createPaletteLayout(ctx) {
       return;
     }
 
-    const sections = [];
+    const sections = profilesHtml ? [profilesHtml] : [];
 
     // --- Posts bucket ---
     const postRows = currentModel.map((m) => postRowHtml(m));
@@ -618,7 +668,7 @@ export default function createPaletteLayout(ctx) {
           const item = flatItems[index];
           activeIndex = index;
           applyActive();
-          if (item && item.kind === 'post') {
+          if (item && (item.kind === 'post' || item.kind === 'profile')) {
             pushRecent(currentQuery);
             return;
           }
@@ -652,6 +702,7 @@ export default function createPaletteLayout(ctx) {
       currentFacetCounts = [];
       currentSuggestion = null;
       flatItems = [];
+      showingResults = false;
       activeIndex = 0;
       ctx.clearFacets();
       renderFilterBar();
@@ -684,6 +735,7 @@ export default function createPaletteLayout(ctx) {
       currentModel = [];
       currentFacetCounts = [];
       currentSuggestion = null;
+      showingResults = false;
       activeIndex = 0;
       setStatus('');
       if (refs.results) refs.results.innerHTML = recentSurfaceHtml();
@@ -720,6 +772,7 @@ export default function createPaletteLayout(ctx) {
       currentSuggestion = null;
       currentQuery = query || currentQuery;
       flatItems = [];
+      showingResults = false;
       activeIndex = 0;
       if (refs.results) {
         refs.results.innerHTML = `
@@ -740,6 +793,12 @@ export default function createPaletteLayout(ctx) {
         if (Array.isArray(meta.facetCounts)) currentFacetCounts = meta.facetCounts;
       }
       renderSurface();
+    },
+
+    // Ghost's author list arrived after results were painted: repaint them
+    // so the Authors group joins the query already on screen.
+    renderAuthorProfiles() {
+      if (showingResults && currentQuery.trim()) renderSurface();
     },
 
     renderSuggestions() {

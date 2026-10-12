@@ -98,6 +98,29 @@ export const POSTS = [
   }
 ];
 
+// Ghost's public author search index (`/ghost/api/content/search-index/authors/`),
+// for the author profiles option. Sam's profile sits on a custom route, as a
+// routes.yaml permalink would put it, and Zoë has no profile image so the
+// initial fallback shows. `profile_image` holds a path; the dev server makes it
+// absolute, the way Ghost returns it.
+export const AUTHORS = [
+  { id: 'author-1', slug: 'jannis', name: 'Jannis', url: 'https://demo.example.com/author/jannis/', profile_image: '/content/images/authors/jannis.svg' },
+  { id: 'author-2', slug: 'sam', name: 'Sam', url: 'https://demo.example.com/team/sam/', profile_image: '/content/images/authors/sam.svg' },
+  { id: 'author-3', slug: 'zoe', name: 'Zoë Ångström', url: 'https://demo.example.com/author/zoe/', profile_image: null }
+];
+
+const AVATAR_COLOURS = { jannis: '#15803d', sam: '#7c3aed' };
+
+// A generated avatar per author, so the playground needs no image host.
+export function authorAvatarSvg(slug) {
+  const author = AUTHORS.find((a) => a.slug === slug);
+  if (!author || !AVATAR_COLOURS[slug]) return null;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
+    + `<rect width="64" height="64" fill="${AVATAR_COLOURS[slug]}"/>`
+    + `<circle cx="32" cy="25" r="11" fill="#fff" fill-opacity="0.85"/>`
+    + `<path d="M12 60c2-12 10-19 20-19s18 7 20 19z" fill="#fff" fill-opacity="0.85"/></svg>`;
+}
+
 // Parse a Typesense filter_by clause like `tags:=[`Ghost`,`Design`] && authors:=[`Sam`]`
 // into { field: [values] }. Only the subset the widget emits is handled.
 function parseFilterBy(filterBy) {

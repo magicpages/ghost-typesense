@@ -342,6 +342,13 @@
   font-weight: 600;
 }
 
+/* Author profile rows (showAuthorProfiles): the avatar fills the icon slot. */
+.mp-search-palette .mp-search-palette-row-icon-avatar .mp-search-author-avatar {
+  width: 100%;
+  height: 100%;
+  font-size: calc(0.625 * var(--mp-rem));
+}
+
 .mp-search-palette .mp-search-palette-row-title {
   font-family: var(--mp-font-heading, var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif));
   flex: 1 1 auto;
