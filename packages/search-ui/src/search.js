@@ -12,6 +12,11 @@ import Typesense from 'typesense';
     // never downloads the layouts they didn't choose.
     const ALT_LAYOUTS = ['palette', 'discovery'];
 
+    // Font presets for the `fontFamily` option. Each non-default value is a
+    // `:host([data-font=…])` rule in styles.css; 'system' sets nothing, so the
+    // widget keeps the system stack it has always shipped.
+    const FONT_FAMILIES = ['system', 'theme', 'sans', 'serif', 'mono'];
+
     // Capture the core script's own URL synchronously at load, so on-demand
     // layout chunks can be resolved relative to it (same CDN directory).
     const SELF_URL = (function () {
@@ -445,6 +450,10 @@ import Typesense from 'typesense';
                 // modal) or an alternative layout loaded on demand ('palette',
                 // 'discovery'). Unknown values fall back to 'modal'.
                 uiStyle: ALT_LAYOUTS.includes(defaultConfig.uiStyle) ? defaultConfig.uiStyle : 'modal',
+                // Typeface for every layout: 'system' (default), 'theme',
+                // 'sans', 'serif' or 'mono'. Unknown values fall back to
+                // 'system', so a typo can't change how an existing site looks.
+                fontFamily: FONT_FAMILIES.includes(defaultConfig.fontFamily) ? defaultConfig.fontFamily : 'system',
                 // Presentation toggles, on unless explicitly set to false so a
                 // config written before they existed renders exactly as before.
                 // showDates applies to every layout; showGroupLabels only to the
@@ -785,6 +794,10 @@ import Typesense from 'typesense';
         }
 
         async init() {
+            // Before any surface mounts, so the first paint already uses the
+            // configured typeface.
+            this.applyFontFamily();
+
             // Alternative layout path: lazily load the selected layout's chunk
             // (palette/discovery), then let it own markup, rendering, and
             // in-surface keyboard nav. The core keeps query/analytics/lifecycle.
@@ -862,6 +875,35 @@ import Typesense from 'typesense';
             this.setupHashHandling();
             this.markSurfaceReady();
             await this.handleInitialState();
+        }
+
+        // Select the configured typeface. The presets are
+        // `:host([data-font=…])` rules in styles.css rather than an inline
+        // style: an inline style on the host would beat the site's own CSS,
+        // and `--mp-font` / `--mp-font-heading` set on `magicpages-search`
+        // from Code Injection must win over the option. 'system' leaves the
+        // host untouched.
+        applyFontFamily() {
+            if (FONT_FAMILIES.includes(this.config.fontFamily) && this.config.fontFamily !== 'system') {
+                this.setAttribute('data-font', this.config.fontFamily);
+            }
+        }
+
+        // 'theme' falls back to the site's computed body font, so a theme with
+        // its own typography still matches when no custom font is picked in
+        // Ghost (the only case in which --gh-font-body is set). Read on every
+        // open rather than once at init: the widget can run before the theme's
+        // stylesheet has applied (an async script, a late stylesheet), and
+        // some themes switch the body font at runtime. One computed-style read
+        // per open is negligible next to showing the surface.
+        // The value lands in a private property that only the
+        // `:host([data-font="theme"])` rule reads, so `--mp-font` itself stays
+        // overridable from page CSS.
+        syncThemeFont() {
+            if (this.config.fontFamily !== 'theme') return;
+            const bodyFont = document.body ? getComputedStyle(document.body).fontFamily : '';
+            if (bodyFont) this.style.setProperty('--mp-theme-font', bodyFont);
+            else this.style.removeProperty('--mp-theme-font');
         }
 
         createShadowContent() {
@@ -1249,6 +1291,7 @@ import Typesense from 'typesense';
             // broken mount shows whatever surface exists rather than hanging.
             await this.surfaceReady;
             if (this.isModalOpen) return;
+            this.syncThemeFont();
 
             // Store active element for focus restoration
             this.activeElement = document.activeElement;
