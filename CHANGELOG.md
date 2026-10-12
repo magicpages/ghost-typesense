@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Opening search no longer shifts the page sideways.** On desktops with
+  permanent scrollbars (Windows, Linux, macOS set to always show them),
+  locking the page behind the modal, palette or discovery layout hid its
+  scrollbar, so the viewport widened: centred content moved by half the
+  scrollbar's width and right-anchored fixed headers by all of it, then jumped
+  back on close. While search is open the widget now sets
+  `scrollbar-gutter: stable` on `<html>`, but only when the page actually has
+  a space-taking scrollbar and doesn't already reserve the gutter itself.
+  Overlay scrollbars (macOS default, mobile) are unaffected, and any inline
+  `scrollbar-gutter` on `<html>` is restored on close. Needs Chrome 94+,
+  Firefox 97+ or Safari 18.2+; older browsers behave as before.
+
 ## [2.4.0] - 2026-10-07
 
 ### Added

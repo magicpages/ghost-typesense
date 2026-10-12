@@ -553,6 +553,83 @@ describe('modal presentation options', () => {
   });
 });
 
+// jsdom has no layout: clientWidth is 0 and innerWidth 1024, which would read
+// as a 1024px scrollbar. Each test pins both to the case it describes.
+describe('body scroll lock — scrollbar gutter', () => {
+  const html = document.documentElement;
+
+  function viewport({ innerWidth, clientWidth }) {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(innerWidth);
+    vi.spyOn(html, 'clientWidth', 'get').mockReturnValue(clientWidth);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    html.removeAttribute('style');
+    document.body.removeAttribute('style');
+  });
+
+  it('reserves the gutter while locked when the page has a classic scrollbar', () => {
+    viewport({ innerWidth: 1200, clientWidth: 1185 });
+    const el = mountWithConfig();
+    el.lockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('stable');
+    expect(document.body.style.position).toBe('fixed');
+    el.unlockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('');
+    expect(html.getAttribute('style') || '').not.toContain('scrollbar-gutter');
+  });
+
+  it('leaves the gutter alone with overlay scrollbars', () => {
+    viewport({ innerWidth: 1200, clientWidth: 1200 });
+    const el = mountWithConfig();
+    el.lockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('');
+    expect(document.body.style.position).toBe('fixed');
+    el.unlockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('');
+    expect(document.body.style.position).toBe('');
+  });
+
+  it('restores an inline gutter value on <html>, including its priority', () => {
+    html.style.setProperty('scrollbar-gutter', 'auto', 'important');
+    viewport({ innerWidth: 1200, clientWidth: 1185 });
+    const el = mountWithConfig();
+    el.lockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('stable');
+    el.unlockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('auto');
+    expect(html.style.getPropertyPriority('scrollbar-gutter')).toBe('important');
+  });
+
+  // The page already keeps the space, so it doesn't shift; replacing
+  // `both-edges` with `stable` would move centred content instead.
+  it('leaves a gutter the page already reserves untouched', () => {
+    html.style.setProperty('scrollbar-gutter', 'stable both-edges');
+    viewport({ innerWidth: 1200, clientWidth: 1170 });
+    const el = mountWithConfig();
+    el.lockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('stable both-edges');
+    el.unlockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('stable both-edges');
+  });
+
+  it('keeps the original state across a repeated lock and unlock', () => {
+    html.style.setProperty('scrollbar-gutter', 'auto');
+    viewport({ innerWidth: 1200, clientWidth: 1185 });
+    const scrollTo = vi.spyOn(window, 'scrollTo');
+    vi.spyOn(window, 'pageYOffset', 'get').mockReturnValue(300);
+    const el = mountWithConfig();
+    el.lockBodyScroll();
+    el.lockBodyScroll();
+    el.unlockBodyScroll();
+    el.unlockBodyScroll();
+    expect(html.style.getPropertyValue('scrollbar-gutter')).toBe('auto');
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(0, 300);
+  });
+});
+
 describe('highlight snippet selection', () => {
   // Regression for the body-only-match case: the term matched in the body
   // (plaintext) but not in the excerpt. The preview must show the highlighted
