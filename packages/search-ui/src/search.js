@@ -1179,8 +1179,33 @@ import Typesense from 'typesense';
         }
 
         lockBodyScroll() {
+            // openModal/closeModal already pair these calls; the flag keeps a
+            // stray second lock from overwriting the saved scroll position and
+            // gutter with the locked state, which unlock would then "restore".
+            if (this.bodyScrollLocked) return;
+            this.bodyScrollLocked = true;
+
             // Store current scroll position
             this.scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+
+            // With a classic (space-taking) scrollbar, the lock below removes
+            // it and the viewport widens, so centred content and right-anchored
+            // fixed headers jump sideways. Reserving the gutter on <html> keeps
+            // that space at the viewport level. Measure first: with overlay
+            // scrollbars the width is 0 and a gutter would reserve space that
+            // was never there, causing a shift of its own. A theme that already
+            // reserves the gutter (e.g. `stable both-edges`) doesn't shift, and
+            // overriding it with plain `stable` would move its content.
+            const html = document.documentElement;
+            this.savedScrollbarGutter = null;
+            if (window.innerWidth - html.clientWidth > 0
+                && !/stable/.test(getComputedStyle(html).scrollbarGutter || '')) {
+                this.savedScrollbarGutter = {
+                    value: html.style.getPropertyValue('scrollbar-gutter'),
+                    priority: html.style.getPropertyPriority('scrollbar-gutter')
+                };
+                html.style.setProperty('scrollbar-gutter', 'stable');
+            }
 
             // Apply body lock styles
             document.body.style.overflow = 'hidden';
@@ -1190,11 +1215,26 @@ import Typesense from 'typesense';
         }
 
         unlockBodyScroll() {
+            if (!this.bodyScrollLocked) return;
+            this.bodyScrollLocked = false;
+
             // Remove body lock styles
             document.body.style.removeProperty('overflow');
             document.body.style.removeProperty('position');
             document.body.style.removeProperty('top');
             document.body.style.removeProperty('width');
+
+            // Hand <html> back the gutter the theme had inline, if any.
+            const saved = this.savedScrollbarGutter;
+            if (saved) {
+                const html = document.documentElement;
+                if (saved.value) {
+                    html.style.setProperty('scrollbar-gutter', saved.value, saved.priority);
+                } else {
+                    html.style.removeProperty('scrollbar-gutter');
+                }
+                this.savedScrollbarGutter = null;
+            }
 
             // Restore scroll position
             window.scrollTo(0, this.scrollPosition);
