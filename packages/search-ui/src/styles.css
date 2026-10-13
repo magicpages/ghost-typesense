@@ -53,9 +53,35 @@
     --color-result-hover: color-mix(in srgb, var(--accent-color) 8%, transparent);
 }
 
+/* Font presets (`fontFamily` option). The core sets data-font on the host for
+   any value other than 'system'. These are :host rules, so the site's own CSS
+   on `magicpages-search` (outer context) beats them: a publisher can set
+   --mp-font / --mp-font-heading from Code Injection whatever the option says.
+   'system' sets nothing and every font-family below falls back to the system
+   stack the widget has always used. */
+:host([data-font="sans"]) {
+    --mp-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+:host([data-font="serif"]) {
+    --mp-font: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+}
+
+:host([data-font="mono"]) {
+    --mp-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Ghost's {{ghost_head}} sets --gh-font-body / --gh-font-heading only when a
+   custom font is picked under Settings → Design. Otherwise fall back to the
+   theme's own body font, which the core reads at open into --mp-theme-font. */
+:host([data-font="theme"]) {
+    --mp-font: var(--gh-font-body, var(--mp-theme-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif));
+    --mp-font-heading: var(--gh-font-heading, var(--mp-font));
+}
+
 /* Base typography for modal content */
 .mp-search-modal {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
     line-height: 1.5;
     font-size: var(--mp-rem);
     -webkit-text-size-adjust: 100%;
@@ -296,6 +322,13 @@
     }
 }
 
+/* Form controls don't inherit font-family, so the search field has always
+   used the browser's input font. Keep that by default; once a fontFamily
+   preset is chosen, the field follows it like the rest of the surface. */
+:host([data-font]) .mp-search-input {
+    font-family: inherit;
+}
+
 .mp-search-input:focus,
 .mp-search-input:focus-visible {
     background: var(--color-surface);
@@ -530,6 +563,7 @@
 }
 
 .mp-search-result-title {
+    font-family: var(--mp-font-heading, var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif));
     color: var(--accent-color);
     font-size: calc(1.125 * var(--mp-rem));
     font-weight: 600;

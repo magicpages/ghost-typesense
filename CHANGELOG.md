@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`fontFamily` sets the search UI's typeface.** The widget renders in a
+  shadow root with a hard-coded system font, so on a site with a serif or
+  otherwise distinctive brand font it looked out of place, and the site's CSS
+  had no way in. `fontFamily` takes `'theme'`, `'sans'`, `'serif'` or `'mono'`
+  and applies to every layout. `'theme'` uses the custom fonts picked under
+  Ghost's Settings → Design → Typography (`--gh-font-body` and
+  `--gh-font-heading`), and the theme's own body font when none is picked.
+  For any other font, set `--mp-font` and `--mp-font-heading` on
+  `magicpages-search` from Code Injection; they take priority over the option.
+  It defaults to `'system'`, so existing configs render exactly as before:
+  serif and mono faces are wider and change row heights and excerpt clamping.
+  Keyboard hints and the palette's `#` / `@` icons stay monospace. The modal's
+  and discovery's search fields follow any chosen font; with `'system'` they
+  keep the browser's input font, as before.
+
 ### Fixed
 - **Opening search no longer shifts the page sideways.** On desktops with
   permanent scrollbars (Windows, Linux, macOS set to always show them),

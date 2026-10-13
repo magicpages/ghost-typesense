@@ -40,7 +40,9 @@
   justify-content: center;
   z-index: 3999998;
   padding: calc(2.5 * var(--mp-rem));
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* --mp-font / --mp-font-heading come from the host (fontFamily presets in
+     styles.css, or the site's own CSS); unset, the system stack applies. */
+  font-family: var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   font-size: var(--mp-rem);
   line-height: 1.5;
   color: var(--color-text);
@@ -163,6 +165,13 @@
   letter-spacing: -0.011em;
   outline: none;
   transition: all var(--transition-smooth);
+}
+
+/* Form controls don't inherit font-family, so the search field has always
+   used the browser's input font. Keep that by default; once a fontFamily
+   preset is chosen, the field follows it like the rest of the surface. */
+:host([data-font]) .mp-search-discovery-input {
+  font-family: inherit;
 }
 
 .mp-search-discovery-input::-webkit-search-cancel-button {
@@ -414,6 +423,7 @@
 }
 
 .mp-search-discovery-card-title {
+  font-family: var(--mp-font-heading, var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif));
   color: var(--accent-color);
   font-size: calc(1 * var(--mp-rem));
   font-weight: 600;
@@ -463,6 +473,7 @@
 }
 
 .mp-search-discovery-preview-title {
+  font-family: var(--mp-font-heading, var(--mp-font, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif));
   color: var(--color-text);
   font-size: calc(1.375 * var(--mp-rem));
   font-weight: 700;

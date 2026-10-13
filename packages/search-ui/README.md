@@ -104,6 +104,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `template` | `String` | No | `'list'` | Modal result layout: `'list'` or `'grid'` (see [Result templates](#result-templates)) |
 | `showDates` | `Boolean` | No | `true` | Set to `false` to hide post dates in every layout (modal and palette rows, discovery rows and preview) |
 | `showGroupLabels` | `Boolean` | No | `true` | Palette only: set to `false` to drop the group headings (Posts, Tags, Authors, Recent searches); groups stay labelled for screen readers |
+| `fontFamily` | `String` | No | `'system'` | Typeface for every layout: `'system'`, `'theme'`, `'sans'`, `'serif'` or `'mono'` (see [Fonts](#fonts)) |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
 | `connectionTimeoutSeconds` | `Number` | No | `5` | How long a single search request may take before the browser aborts it (see [Connection tuning](#connection-tuning)) |
 | `numRetries` | `Number` | No | typesense-js default | How many times a failed request is retried across your nodes |
@@ -595,6 +596,42 @@ Open (`/`, `Cmd/Ctrl+K`) and close (`Esc`) are owned by the core so they behave 
 The search UI automatically detects and uses your Ghost site's accent color by reading the `--ghost-accent-color` CSS variable. This ensures that the search interface matches your site's branding.
 
 The UI also includes a built-in dark mode that automatically activates based on the user's system preferences. It can also be overwritten in the UI's configuration.
+
+### Fonts
+
+By default the search UI uses the system font stack it has always shipped. Set `fontFamily` to match your site's typography:
+
+| `fontFamily` | Body text | Result titles |
+|--------------|-----------|---------------|
+| `'system'` *(default)* | System UI stack (`system-ui, -apple-system, …, sans-serif`) | Same |
+| `'theme'` | Ghost's custom body font (`--gh-font-body`) if one is picked under Settings → Design → Typography, otherwise your theme's body font | Ghost's custom heading font (`--gh-font-heading`), otherwise the body font |
+| `'sans'` | System UI stack | Same |
+| `'serif'` | `ui-serif, Georgia, Cambria, 'Times New Roman', serif` | Same |
+| `'mono'` | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` | Same |
+
+```html
+<script>
+  window.__MP_SEARCH_CONFIG__ = {
+    // ... required config
+    fontFamily: 'theme'
+  };
+</script>
+```
+
+Unknown values fall back to `'system'`. With `'theme'`, the theme's body font is read each time search opens, so a stylesheet that loads after the widget is still picked up. Keyboard hints and the palette's `#` / `@` icons stay monospace in every mode.
+
+For any other font, set the two CSS custom properties the widget reads on the `magicpages-search` element, e.g. from Code Injection. They take priority over `fontFamily`; `--mp-font-heading` falls back to `--mp-font` when unset:
+
+```html
+<style>
+  magicpages-search {
+    --mp-font: "Inter", sans-serif;          /* body text */
+    --mp-font-heading: "Fraunces", serif;    /* result titles (optional) */
+  }
+</style>
+```
+
+The search UI does not load fonts itself: use a font your site already loads, or load it in Code Injection. With `fontFamily` left at `'system'`, the modal's and discovery's search fields keep the browser's own input font, as before; set any other `fontFamily` (e.g. `'sans'`) and they follow `--mp-font` too.
 
 ### Web Component Architecture
 

@@ -8,6 +8,8 @@ const els = {
   uistyle: document.getElementById('opt-uistyle'),
   template: document.getElementById('opt-template'),
   theme: document.getElementById('opt-theme'),
+  font: document.getElementById('opt-font'),
+  ghostFonts: document.getElementById('opt-ghostfonts'),
   facets: document.getElementById('opt-facets'),
   searchAuthors: document.getElementById('opt-searchauthors'),
   suggestions: document.getElementById('opt-suggestions'),
@@ -161,6 +163,7 @@ function buildConfig(backend) {
     collectionName: 'ghost',
     theme: els.theme.value,
     template: els.template.value,
+    fontFamily: els.font.value,
     enableHighlighting: true
   };
 
@@ -208,6 +211,8 @@ function readControls() {
     uistyle: els.uistyle ? els.uistyle.value : 'modal',
     template: els.template.value,
     theme: els.theme.value,
+    font: els.font.value,
+    ghostFonts: els.ghostFonts.checked,
     facets: els.facets.checked,
     searchAuthors: els.searchAuthors ? els.searchAuthors.checked : false,
     suggestions: els.suggestions.checked,
@@ -224,6 +229,8 @@ function restoreControls(state) {
   if (els.uistyle) els.uistyle.value = state.uistyle ?? 'modal';
   els.template.value = state.template ?? 'list';
   els.theme.value = state.theme ?? 'system';
+  els.font.value = state.font ?? 'system';
+  els.ghostFonts.checked = !!state.ghostFonts;
   els.facets.checked = !!state.facets;
   if (els.searchAuthors) els.searchAuthors.checked = !!state.searchAuthors;
   els.suggestions.checked = !!state.suggestions;
@@ -239,6 +246,20 @@ function restoreControls(state) {
 // signed out → free → paying without a Ghost install.
 function applyReaderCookie(reader) {
   document.cookie = `pg_reader=${encodeURIComponent(reader || 'anonymous')}; path=/`;
+}
+
+// Stand in for {{ghost_head}}, which defines these on :root only when a custom
+// font is picked under Settings → Design → Typography. Without them,
+// `fontFamily: 'theme'` falls back to this page's own body font (Inter stack).
+function applyGhostFonts(enabled) {
+  const root = document.documentElement.style;
+  if (enabled) {
+    root.setProperty('--gh-font-heading', "Georgia, 'Times New Roman', serif");
+    root.setProperty('--gh-font-body', 'Verdana, Geneva, sans-serif');
+  } else {
+    root.removeProperty('--gh-font-heading');
+    root.removeProperty('--gh-font-body');
+  }
 }
 
 function apply() {
@@ -259,6 +280,7 @@ async function loadWidget() {
     /* ignore */
   }
   restoreControls(state);
+  applyGhostFonts(!!(state && state.ghostFonts));
 
   if (!state) {
     // Annotate the Semantic toggle on first load too, so its availability is
@@ -292,7 +314,7 @@ async function loadWidget() {
 
   const config = buildConfig(backend);
   window.__MP_SEARCH_CONFIG__ = config;
-  write(`config applied: ui=${config.uiStyle || 'modal'}, template=${config.template}, facets=${!!config.facets}, semantic=${!!config.semanticSearch}, analytics=${!!config.analytics}`);
+  write(`config applied: ui=${config.uiStyle || 'modal'}, template=${config.template}, font=${config.fontFamily}, facets=${!!config.facets}, semantic=${!!config.semanticSearch}, analytics=${!!config.analytics}`);
 
   try {
     // Dynamic import of the shipped artifact — the widget auto-creates its own
