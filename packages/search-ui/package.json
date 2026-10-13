@@ -33,20 +33,20 @@
     "typesense": "3.0.6"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-replace": "^6.0.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "cssnano": "^9.0.1",
-    "eslint": "^10.9.1",
-    "jsdom": "^30.0.1",
+    "@rollup/plugin-terser": "^1.0.0",
+    "cssnano": "^9.8.0",
+    "eslint": "^10.12.0",
+    "jsdom": "^30.1.2",
     "postcss": "^8.5.26",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.10",
     "rimraf": "^6.1.3",
-    "rollup": "^4.63.0",
+    "rollup": "^4.64.5",
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-visualizer": "^7.1.1",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.4"
   },
   "publishConfig": {
     "access": "public"

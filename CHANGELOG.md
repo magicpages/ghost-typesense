@@ -35,6 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ghostContentApiKey` / `ghostUrl`. If the list cannot be loaded the section
   is simply left out. The option defaults to `false`.
 
+### Changed
+- **The indexer moved to typesense-js 3.** Core goes from 1.8.2 to 3.1, the
+  same major the search UI already ships, and the config package's
+  `typesense` peer range is now `^3.1.1`, so a project installing it next to
+  typesense-js 1.x gets a peer-dependency conflict. Core's calls (collection
+  create/retrieve/delete, bulk import, upsert, delete by filter) are
+  unchanged in v3. Checked against a Typesense 28 server, they give the same
+  index as 1.8.2.
+- **Tooling refresh.** turbo 1 → 2 (`turbo.json` uses `tasks`, keeps loose
+  environment handling and opts out of turbo writing an `AGENTS.md`), vitest
+  4 → 5, vite 5 → 8 in the playground, `@rollup/plugin-terser` 1.0,
+  `@rollup/plugin-commonjs` 29, dotenv 17, zod 4.6, plus the eslint,
+  prettier, jsdom, rollup and `@types/node` minors. Nothing in the published
+  packages changes apart from the typesense-js upgrade above.
+
 ### Fixed
 - **Opening search no longer shifts the page sideways.** On desktops with
   permanent scrollbars (Windows, Linux, macOS set to always show them),
@@ -47,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Overlay scrollbars (macOS default, mobile) are unaffected, and any inline
   `scrollbar-gutter` on `<html>` is restored on close. Needs Chrome 94+,
   Firefox 97+ or Safari 18.2+; older browsers behave as before.
+
+### Security
+- **axios 1.20 in the search bundle and the indexer.** typesense-js and the
+  Ghost Content API client pull in axios, which had prototype-pollution,
+  header-injection and ReDoS advisories up to 1.19. The lockfile now resolves
+  1.20. Dev-only tools (svgo, brace-expansion, colord) were patched as well,
+  and the playground's vite 8 drops the esbuild dev-server advisory.
 
 ## [2.4.0] - 2026-10-07
 

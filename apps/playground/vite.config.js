@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { AUTHORS, authorAvatarSvg, mockSearchResponse } from './src/mock.js';
 
-const searchUiDist = resolve(__dirname, '../../packages/search-ui/dist');
+const searchUiDist = resolve(import.meta.dirname, '../../packages/search-ui/dist');
 
 /**
  * Serve the built search widget at `/search.min.js`, straight from
@@ -167,14 +167,14 @@ function mockGhostAuthors() {
 }
 
 export default defineConfig({
-  root: __dirname,
+  root: import.meta.dirname,
   plugins: [serveSearchBundle(), mockTypesense(), mockGhostMember(), mockGhostAuthors()],
   server: {
     port: 5174,
     open: true,
     fs: {
       // Allow reading the built bundle from the sibling package.
-      allow: [resolve(__dirname, '../../')]
+      allow: [resolve(import.meta.dirname, '../../')]
     }
   },
   build: {

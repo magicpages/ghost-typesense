@@ -14,9 +14,9 @@
   },
   "dependencies": {
     "@magicpages/ghost-typesense-search-ui": "*",
-    "typesense": "^1.7.2"
+    "typesense": "^3.1.1"
   },
   "devDependencies": {
-    "vite": "^5.1.0"
+    "vite": "^8.3.4"
   }
 }
