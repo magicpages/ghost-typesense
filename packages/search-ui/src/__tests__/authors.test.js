@@ -316,6 +316,32 @@ describe('author profiles — modal rendering', () => {
     expect(link.getAttribute('href')).toBe('https://demo.example.com/author/eve/" onmouseover="alert(1)');
   });
 
+  it('drops authors whose profile URL would not navigate to a page', async () => {
+    respondWith({ authors: [
+      { id: 'j', slug: 'js', name: 'Jade Script', url: 'javascript:alert(1)', profile_image: null },
+      { id: 'd', slug: 'data', name: 'Jade Data', url: 'data:text/html,<script>alert(1)</script>', profile_image: null },
+      { id: 'ok', slug: 'jade', name: 'Jade Page', url: 'https://demo.example.com/author/jade/', profile_image: null }
+    ] });
+    const el = await loaded(mount({ showAuthorProfiles: true, ...SOURCE }));
+
+    expect(el.matchAuthorProfiles('jade').map(a => a.name)).toEqual(['Jade Page']);
+    expect(el.findAuthorProfile('Jade Script')).toBeNull();
+  });
+
+  it('applies the same check to the sessionStorage copy', async () => {
+    window.sessionStorage.setItem('mp-search-authors:https://admin.example.com', JSON.stringify([
+      { id: 'j', slug: 'js', name: 'Jade Script', url: ' JavaScript:alert(1)', profile_image: null },
+      { id: 'ok', slug: 'jade', name: 'Jade Page', url: 'https://demo.example.com/author/jade/', profile_image: null }
+    ]));
+    const fetchMock = respondWith({ authors: [] });
+    const el = mount({ showAuthorProfiles: true, ...SOURCE });
+    el.loadAuthorProfiles();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(el.matchAuthorProfiles('jade').map(a => a.name)).toEqual(['Jade Page']);
+    expect(el.findAuthorProfile('Jade Script')).toBeNull();
+  });
+
   it('hides the group again when the query is cleared', async () => {
     respondWith({ authors: AUTHORS });
     const el = await loaded(mount({ showAuthorProfiles: true, ...SOURCE }));

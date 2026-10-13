@@ -505,4 +505,28 @@ describe('palette author profiles', () => {
     layout.renderAuthorProfiles();
     expect(shadow.querySelector('.mp-search-palette-row-profile')).not.toBeNull();
   });
+
+  it('does not pair a pending query’s authors with the previous results', () => {
+    let profiles = [];
+    const { layout, shadow, ctx } = mountWithProfiles({}, []);
+    ctx.getAuthorProfiles = vi.fn(() => profiles);
+    layout.bindEvents();
+    layout.renderResults(postModel(), { found: 1, query: 'garden' });
+
+    // The reader types a name; the search for it is still in flight when
+    // Ghost's author list lands.
+    const input = shadow.querySelector('.mp-search-palette-input');
+    input.value = 'jane';
+    input.dispatchEvent(new Event('input'));
+    layout.renderLoading();
+    profiles = [PROFILE];
+    layout.renderAuthorProfiles();
+
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).toBeNull();
+    expect(shadow.querySelector('.mp-search-palette-status').textContent).toBe('paletteSearching');
+
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+    expect(ctx.getAuthorProfiles).toHaveBeenLastCalledWith('jane');
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).not.toBeNull();
+  });
 });

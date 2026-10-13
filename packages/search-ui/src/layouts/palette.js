@@ -45,6 +45,10 @@ export default function createPaletteLayout(ctx) {
   let currentModel = [];
   let currentFacetCounts = [];
   let currentQuery = '';
+  // The query the results on screen were rendered for. currentQuery follows
+  // the input as the reader types, so it runs ahead while a search is pending;
+  // the Authors group must match the post rows, not the half-typed query.
+  let resultsQuery = '';
   // Spelling correction offered for a query that matched nothing, or null.
   let currentSuggestion = null;
   // Whether the results surface (rather than recent searches or an error)
@@ -382,7 +386,7 @@ export default function createPaletteLayout(ctx) {
   // author profiles (an older core) simply has none to show.
   function profilesGroupHtml() {
     const profiles = typeof ctx.getAuthorProfiles === 'function'
-      ? ctx.getAuthorProfiles(currentQuery)
+      ? ctx.getAuthorProfiles(resultsQuery)
       : [];
     if (!profiles.length) return '';
     const label = ctx.t('authorsGroupLabel');
@@ -698,6 +702,7 @@ export default function createPaletteLayout(ctx) {
       }
       if (refs.input) refs.input.value = '';
       currentQuery = '';
+      resultsQuery = '';
       currentModel = [];
       currentFacetCounts = [];
       currentSuggestion = null;
@@ -733,6 +738,7 @@ export default function createPaletteLayout(ctx) {
 
     renderInitial() {
       currentModel = [];
+      resultsQuery = '';
       currentFacetCounts = [];
       currentSuggestion = null;
       showingResults = false;
@@ -750,6 +756,7 @@ export default function createPaletteLayout(ctx) {
       currentModel = [];
       currentSuggestion = null;
       currentQuery = query || currentQuery;
+      resultsQuery = currentQuery;
       renderSurface();
     },
 
@@ -771,6 +778,7 @@ export default function createPaletteLayout(ctx) {
       currentFacetCounts = [];
       currentSuggestion = null;
       currentQuery = query || currentQuery;
+      resultsQuery = '';
       flatItems = [];
       showingResults = false;
       activeIndex = 0;
@@ -792,13 +800,17 @@ export default function createPaletteLayout(ctx) {
         if (typeof meta.query === 'string') currentQuery = meta.query;
         if (Array.isArray(meta.facetCounts)) currentFacetCounts = meta.facetCounts;
       }
+      resultsQuery = currentQuery;
       renderSurface();
     },
 
     // Ghost's author list arrived after results were painted: repaint them
-    // so the Authors group joins the query already on screen.
+    // so the Authors group joins the query already on screen. Skipped while a
+    // newer query is pending — repainting then would pair the new query's
+    // authors with the old post rows and clear the "Searching…" status; the
+    // pending results render with the list anyway.
     renderAuthorProfiles() {
-      if (showingResults && currentQuery.trim()) renderSurface();
+      if (showingResults && resultsQuery.trim() && resultsQuery === currentQuery) renderSurface();
     },
 
     renderSuggestions() {

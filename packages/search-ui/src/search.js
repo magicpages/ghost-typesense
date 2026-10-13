@@ -318,6 +318,22 @@ import Typesense from 'typesense';
         return queryTokens.every(q => tokens.some(token => token.startsWith(q)));
     }
 
+    // An author the widget can render as a profile link: a name, and a URL
+    // that navigates to a page. Attribute escaping doesn't stop a
+    // `javascript:` URL from running when the link is followed, so only
+    // http(s) URLs pass. Applied to the fetched list and to the sessionStorage
+    // copy alike, since either could carry one.
+    function isUsableAuthor(author) {
+        if (!author || typeof author.name !== 'string' || !author.name.trim()) return false;
+        if (typeof author.url !== 'string' || !author.url) return false;
+        try {
+            const { protocol } = new URL(author.url, window.location.href);
+            return protocol === 'http:' || protocol === 'https:';
+        } catch {
+            return false;
+        }
+    }
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -793,7 +809,7 @@ import Typesense from 'typesense';
             try {
                 const cached = JSON.parse(window.sessionStorage.getItem(cacheKey) || 'null');
                 if (Array.isArray(cached)) {
-                    this.authorProfiles = cached;
+                    this.authorProfiles = cached.filter(isUsableAuthor);
                     return;
                 }
             } catch {
@@ -826,7 +842,7 @@ import Typesense from 'typesense';
                 const data = await response.json();
                 if (!data || !Array.isArray(data.authors)) return null;
                 return data.authors
-                    .filter(a => a && typeof a.name === 'string' && a.name.trim() && typeof a.url === 'string' && a.url)
+                    .filter(isUsableAuthor)
                     .map(a => ({
                         id: a.id || null,
                         slug: a.slug || null,
