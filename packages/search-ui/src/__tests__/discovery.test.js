@@ -499,3 +499,120 @@ describe('discovery presentation options', () => {
     expect(titles).toEqual(['facetTopicsLabel']);
   });
 });
+
+describe('discovery author profiles', () => {
+  const PROFILE = {
+    id: 'a1',
+    slug: 'ada',
+    name: 'Ada Lovelace',
+    url: '/author/ada/',
+    profileImage: 'https://cdn.example.com/ada.png',
+    avatarHtml: '<img class="mp-search-author-avatar" src="https://cdn.example.com/ada.png" alt="" loading="lazy" />'
+  };
+
+  function mountWithProfiles(profiles = [PROFILE]) {
+    const config = { showAuthorProfiles: true };
+    const ctx = makeCtx(config);
+    ctx.getAuthorProfiles = vi.fn(() => profiles);
+    ctx.findAuthorProfile = vi.fn((name) => profiles.find((p) => p.name === name) || null);
+    const layout = createDiscoveryLayout(ctx);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountedHosts.push(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = layout.buildMarkup();
+    layout.cacheElements(shadow);
+    return { layout, shadow, ctx };
+  }
+
+  it('leaves the markup and byline as they were with the option off', () => {
+    const { layout, shadow } = mountDiscovery();
+    layout.renderResults(modelWith(null), { found: 1, query: 'ada' });
+
+    expect(shadow.querySelector('.mp-search-discovery-results-col')).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-authors')).toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-results').parentElement.className)
+      .toBe('mp-search-discovery-body');
+    expect(shadow.querySelector('.mp-search-discovery-preview-byline a')).toBeNull();
+  });
+
+  it('shows matching authors as links above the results list, outside the listbox', () => {
+    const { layout, shadow, ctx } = mountWithProfiles();
+    layout.renderResults(modelWith(null), { found: 1, query: 'ada' });
+
+    expect(ctx.getAuthorProfiles).toHaveBeenCalledWith('ada');
+    const strip = shadow.querySelector('.mp-search-discovery-authors');
+    expect(strip.classList.contains('mp-search-hidden')).toBe(false);
+    expect(strip.getAttribute('aria-label')).toBe('authorsGroupLabel');
+    expect(strip.closest('[role="listbox"]')).toBeNull();
+    const results = shadow.getElementById('mp-search-discovery-results');
+    expect(strip.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const link = strip.querySelector('a.mp-search-discovery-author-link');
+    expect(link.getAttribute('href')).toBe('/author/ada/');
+    expect(link.querySelector('img.mp-search-author-avatar')).not.toBeNull();
+    expect(link.querySelector('.mp-search-author-name').textContent).toBe('Ada Lovelace');
+  });
+
+  it('shows the strip when no post matched, and hides it on the initial and error surfaces', () => {
+    const { layout, shadow } = mountWithProfiles();
+    const strip = shadow.querySelector('.mp-search-discovery-authors');
+
+    layout.renderEmpty('ada');
+    expect(strip.classList.contains('mp-search-hidden')).toBe(false);
+
+    layout.renderInitial();
+    expect(strip.classList.contains('mp-search-hidden')).toBe(true);
+
+    layout.renderResults(modelWith(null), { found: 1, query: 'ada' });
+    layout.renderError('ada');
+    expect(strip.classList.contains('mp-search-hidden')).toBe(true);
+    expect(strip.innerHTML).toBe('');
+  });
+
+  it('links a byline name Ghost lists as an author to their profile', () => {
+    const { layout, shadow } = mountWithProfiles();
+    const model = modelWith(null);
+    model[0].authors = ['Ada Lovelace', 'Guest Writer'];
+    layout.renderResults(model, { found: 1, query: 'garden' });
+
+    const byline = shadow.querySelector('.mp-search-discovery-preview-byline');
+    const links = byline.querySelectorAll('a.mp-search-discovery-byline-author');
+    expect([...links].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Ada Lovelace', '/author/ada/']]);
+    expect(byline.textContent).toContain('Guest Writer');
+  });
+
+  it('escapes names and URLs in the strip and the byline', () => {
+    const evil = {
+      ...PROFILE,
+      name: '<img src=x onerror=alert(1)>',
+      url: '/author/x/" onmouseover="alert(1)'
+    };
+    const { layout, shadow } = mountWithProfiles([evil]);
+    const model = modelWith(null);
+    model[0].authors = [evil.name];
+    layout.renderResults(model, { found: 1, query: 'x' });
+
+    for (const link of shadow.querySelectorAll('.mp-search-discovery-author-link, .mp-search-discovery-byline-author')) {
+      expect(link.hasAttribute('onmouseover')).toBe(false);
+      expect(link.querySelector('[onerror]')).toBeNull();
+      expect(link.textContent).toContain('<img src=x onerror=alert(1)>');
+    }
+    expect(shadow.querySelectorAll('.mp-search-discovery-byline-author')).toHaveLength(1);
+  });
+
+  it('adds authors that arrive late to results already on screen', () => {
+    let profiles = [];
+    const { layout, shadow, ctx } = mountWithProfiles([]);
+    ctx.getAuthorProfiles = vi.fn(() => profiles);
+    ctx.findAuthorProfile = vi.fn((name) => profiles.find((p) => p.name === name) || null);
+
+    layout.renderResults(modelWith(null), { found: 1, query: 'ada' });
+    expect(shadow.querySelector('.mp-search-discovery-author-link')).toBeNull();
+
+    profiles = [PROFILE];
+    layout.renderAuthorProfiles();
+    expect(shadow.querySelector('.mp-search-discovery-author-link')).not.toBeNull();
+    expect(shadow.querySelector('.mp-search-discovery-byline-author')).not.toBeNull();
+  });
+});

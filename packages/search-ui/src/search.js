@@ -113,12 +113,40 @@ import Typesense from 'typesense';
         el.close();
     }
 
+    // Ghost's own search script tag carries the public Content API key
+    // (`data-key`) and the admin URL (`data-sodo-search`), which is all the
+    // author profiles section needs to ask Ghost for its author list. The tag
+    // is either this very script (installed via `sodoSearch__url`) or Ghost's
+    // default one, which cleanupGhostSearch removes — so its attributes are
+    // remembered at load and again right before any removal, never read later
+    // from a DOM that no longer has them.
+    let ghostSearchTag = null;
+
+    function rememberGhostSearchTag(script) {
+        if (ghostSearchTag || !script || typeof script.getAttribute !== 'function') return;
+        const key = script.getAttribute('data-key');
+        const url = script.getAttribute('data-sodo-search');
+        if (key && url) ghostSearchTag = { key, url };
+    }
+
+    try {
+        const current = document.currentScript;
+        rememberGhostSearchTag(current && current.hasAttribute('data-sodo-search')
+            ? current
+            : document.querySelector('script[data-sodo-search]'));
+    } catch {
+        // ignore — the explicit config overrides still work
+    }
+
     function cleanupGhostSearch() {
         // Only cleanup after we've initialized
         if (!isInitialized) return;
 
         const searchScript = document.querySelector('script[data-sodo-search]');
-        if (searchScript) searchScript.remove();
+        if (searchScript) {
+            rememberGhostSearchTag(searchScript);
+            searchScript.remove();
+        }
         const searchRoot = document.getElementById('sodo-search-root');
         if (searchRoot) searchRoot.remove();
     }
@@ -132,6 +160,7 @@ import Typesense from 'typesense';
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
                         if (node.tagName === 'SCRIPT' && node.hasAttribute('data-sodo-search')) {
+                            rememberGhostSearchTag(node);
                             node.remove();
                         } else if (node.id === 'sodo-search-root') {
                             node.remove();
@@ -261,6 +290,50 @@ import Typesense from 'typesense';
     // `memberEndpoint`.
     const DEFAULT_MEMBER_ENDPOINT = '/members/api/member';
 
+    // Author profiles (`showAuthorProfiles`). Ghost's public search index lists
+    // every author it is willing to show — the same endpoint its own search
+    // uses — and the list is small enough to match in the browser.
+    const AUTHOR_INDEX_PATH = '/ghost/api/content/search-index/authors/';
+    const AUTHOR_CACHE_PREFIX = 'mp-search-authors:';
+    // A single letter matches half the masthead, which reads as noise above
+    // the posts rather than as an answer.
+    const AUTHOR_MIN_QUERY_LENGTH = 2;
+    const AUTHOR_MAX_RESULTS = 3;
+
+    // Lowercased with diacritics stripped, so "jose" finds "José" and "Ö"
+    // matches "o" — readers rarely type the accents of a name.
+    function foldForMatch(value) {
+        return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
+    function nameTokens(value) {
+        return foldForMatch(value).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    }
+
+    // Word-prefix match: every word the reader typed must start some word of
+    // the name, in any order, so "jan", "doe" and "doe ja" all find "Jane Doe"
+    // while "ane" (mid-word) does not.
+    function authorMatches(name, queryTokens) {
+        const tokens = nameTokens(name);
+        return queryTokens.every(q => tokens.some(token => token.startsWith(q)));
+    }
+
+    // An author the widget can render as a profile link: a name, and a URL
+    // that navigates to a page. Attribute escaping doesn't stop a
+    // `javascript:` URL from running when the link is followed, so only
+    // http(s) URLs pass. Applied to the fetched list and to the sessionStorage
+    // copy alike, since either could carry one.
+    function isUsableAuthor(author) {
+        if (!author || typeof author.name !== 'string' || !author.name.trim()) return false;
+        if (typeof author.url !== 'string' || !author.url) return false;
+        try {
+            const { protocol } = new URL(author.url, window.location.href);
+            return protocol === 'http:' || protocol === 'https:';
+        } catch {
+            return false;
+        }
+    }
+
     // Web Component Definition
     class MagicPagesSearchElement extends HTMLElement {
         constructor() {
@@ -291,6 +364,12 @@ import Typesense from 'typesense';
             this.searchSequence = 0;
             this.cachedElements = {};
             this.typesenseClient = null;
+
+            // Ghost's author list for `showAuthorProfiles`, null until it has
+            // loaded. `authorProfilesRequested` makes it a once-per-page-session
+            // request: a failed fetch is not retried on every open or keystroke.
+            this.authorProfiles = null;
+            this.authorProfilesRequested = false;
 
             // Analytics: the query that produced the currently rendered
             // results (used to attribute clicks), and the last query for
@@ -358,6 +437,10 @@ import Typesense from 'typesense';
                 paidLabel: 'Paid members',
                 ariaPaidLabel: 'Paid-members-only content',
                 untitledPost: 'Untitled',
+                // Heading of the author profiles group (showAuthorProfiles), in
+                // every layout. The palette's "Filter by author" rows are a
+                // different thing — they narrow the posts — hence its own key.
+                authorsGroupLabel: 'Authors',
 
                 // Relative dates for the refined result rows. {n} is substituted.
                 relativeNow: 'just now',
@@ -471,7 +554,18 @@ import Typesense from 'typesense';
                 // result keeps its badge.
                 memberEndpoint: typeof defaultConfig.memberEndpoint === 'string' && defaultConfig.memberEndpoint.trim()
                     ? defaultConfig.memberEndpoint.trim()
-                    : DEFAULT_MEMBER_ENDPOINT
+                    : DEFAULT_MEMBER_ENDPOINT,
+                // Opt in to an Authors group linking to profile pages. Off by
+                // default: it costs a request to Ghost on first open.
+                showAuthorProfiles: defaultConfig.showAuthorProfiles === true,
+                // Explicit source for that request, for pages without Ghost's
+                // search script tag. Each one wins over the tag's own value.
+                ghostContentApiKey: typeof defaultConfig.ghostContentApiKey === 'string' && defaultConfig.ghostContentApiKey.trim()
+                    ? defaultConfig.ghostContentApiKey.trim()
+                    : null,
+                ghostUrl: typeof defaultConfig.ghostUrl === 'string' && defaultConfig.ghostUrl.trim()
+                    ? defaultConfig.ghostUrl.trim()
+                    : null
             };
 
             if (!this.config.typesenseNodes || !this.config.typesenseApiKey || !this.config.collectionName) {
@@ -679,6 +773,166 @@ import Typesense from 'typesense';
             this.attachCommonSearchListeners();
         }
 
+        // Where to ask Ghost for its author list: the explicit config values
+        // first, then Ghost's search script tag. The tag is looked up once more
+        // here in case it was added after this script loaded and is still in
+        // the document. Without a key there is nothing to ask; without an
+        // admin URL, the site's own origin serves the same Content API.
+        authorIndexSource() {
+            if (!ghostSearchTag) {
+                try {
+                    rememberGhostSearchTag(document.querySelector('script[data-sodo-search]'));
+                } catch {
+                    // ignore — the config overrides still apply
+                }
+            }
+            const key = this.config.ghostContentApiKey || (ghostSearchTag && ghostSearchTag.key);
+            if (!key) return null;
+            const base = this.config.ghostUrl || (ghostSearchTag && ghostSearchTag.url) || window.location.origin;
+            return { key, url: String(base).replace(/\/+$/, '') };
+        }
+
+        // Load Ghost's author list once per page session, on first open. A
+        // sessionStorage copy (scoped to the admin URL) serves later page views
+        // synchronously, so the section renders with the very first results.
+        // Fail-silent: a missing key, a failed request or an unexpected body
+        // leaves the list empty and the section absent; post search is never
+        // involved, and the request is not retried.
+        loadAuthorProfiles() {
+            if (!this.config.showAuthorProfiles || this.authorProfilesRequested) return;
+            this.authorProfilesRequested = true;
+
+            const source = this.authorIndexSource();
+            if (!source) return;
+
+            const cacheKey = AUTHOR_CACHE_PREFIX + source.url;
+            try {
+                const cached = JSON.parse(window.sessionStorage.getItem(cacheKey) || 'null');
+                if (Array.isArray(cached)) {
+                    this.authorProfiles = cached.filter(isUsableAuthor);
+                    return;
+                }
+            } catch {
+                // Unavailable or corrupt storage — fetch instead.
+            }
+
+            this.authorProfilesLoad = this.fetchAuthorProfiles(source).then(list => {
+                if (!list) return;
+                this.authorProfiles = list;
+                try {
+                    window.sessionStorage.setItem(cacheKey, JSON.stringify(list));
+                } catch {
+                    // Storage full or blocked — the in-memory copy still serves this page.
+                }
+                // The reader may have typed before the list arrived; show the
+                // authors for what is already on screen.
+                if (this.isModalOpen) this.refreshAuthorProfiles();
+            });
+        }
+
+        // The author list from Ghost's public search index, reduced to the
+        // fields the widget renders. Returns null on any failure.
+        async fetchAuthorProfiles(source) {
+            try {
+                const response = await fetch(`${source.url}${AUTHOR_INDEX_PATH}?key=${encodeURIComponent(source.key)}`, {
+                    method: 'GET',
+                    credentials: 'omit'
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (!data || !Array.isArray(data.authors)) return null;
+                return data.authors
+                    .filter(isUsableAuthor)
+                    .map(a => ({
+                        id: a.id || null,
+                        slug: a.slug || null,
+                        name: a.name.trim(),
+                        url: a.url,
+                        profile_image: typeof a.profile_image === 'string' && a.profile_image ? a.profile_image : null
+                    }));
+            } catch {
+                return null;
+            }
+        }
+
+        // An author as the layouts render it. `avatarHtml` is trusted markup
+        // (the image URL and the initial are escaped here); everything else is
+        // raw data the caller escapes. The URL follows the posts' own
+        // `transformToRelativeUrls` setting, so both kinds of link agree.
+        normalizeAuthorProfile(author) {
+            const initial = (Array.from(author.name)[0] || '').toUpperCase();
+            const avatarHtml = author.profile_image
+                ? `<img class="${CSS_PREFIX}-author-avatar" src="${this.escapeHtmlAttr(author.profile_image)}" alt="" loading="lazy" />`
+                : `<span class="${CSS_PREFIX}-author-avatar ${CSS_PREFIX}-author-avatar-empty" aria-hidden="true">${this.escapeHtmlAttr(initial)}</span>`;
+            return {
+                id: author.id,
+                slug: author.slug,
+                name: author.name,
+                url: this.config.transformToRelativeUrls ? this.toRelativeUrl(author.url) : author.url,
+                profileImage: author.profile_image,
+                avatarHtml
+            };
+        }
+
+        // Authors whose name matches the query, in Ghost's own order. Empty
+        // when the option is off, the list has not loaded, or the query is too
+        // short to mean a name.
+        matchAuthorProfiles(query) {
+            if (!this.config.showAuthorProfiles || !Array.isArray(this.authorProfiles)) return [];
+            const queryTokens = nameTokens(query);
+            if (queryTokens.join('').length < AUTHOR_MIN_QUERY_LENGTH) return [];
+            return this.authorProfiles
+                .filter(author => authorMatches(author.name, queryTokens))
+                .slice(0, AUTHOR_MAX_RESULTS)
+                .map(author => this.normalizeAuthorProfile(author));
+        }
+
+        // The profile for an author name exactly as the index stores it on a
+        // post (accents and case aside), or null.
+        findAuthorProfile(name) {
+            if (!this.config.showAuthorProfiles || !Array.isArray(this.authorProfiles)) return null;
+            const folded = foldForMatch(name).trim();
+            if (!folded) return null;
+            const author = this.authorProfiles.find(a => foldForMatch(a.name) === folded);
+            return author ? this.normalizeAuthorProfile(author) : null;
+        }
+
+        // Repaint the authors for the query already on screen.
+        refreshAuthorProfiles() {
+            if (this.activeLayout) {
+                // Additive: a layout chunk older than this feature has no hook.
+                if (typeof this.activeLayout.renderAuthorProfiles === 'function') {
+                    this.activeLayout.renderAuthorProfiles();
+                }
+                return;
+            }
+            this.renderAuthorProfiles(this.searchInput ? this.searchInput.value : '');
+        }
+
+        // The modal's Authors group, above the facets and posts. Its links take
+        // part in arrow-key navigation (see navigableResults).
+        renderAuthorProfiles(query) {
+            if (!this.authorsContainer) return;
+            const authors = this.matchAuthorProfiles(query);
+            if (!authors.length) {
+                this.authorsContainer.innerHTML = '';
+                this.authorsContainer.classList.add(`${CSS_PREFIX}-hidden`);
+                return;
+            }
+            this.authorsContainer.innerHTML = `
+                <div class="${CSS_PREFIX}-authors-title" aria-hidden="true">${this.escapeHtmlAttr(this.t('authorsGroupLabel'))}</div>
+                <div class="${CSS_PREFIX}-authors-list">
+                    ${authors.map(author => `
+                        <a href="${this.escapeHtmlAttr(author.url)}" class="${CSS_PREFIX}-author-link"${author.id ? ` data-author-id="${this.escapeHtmlAttr(author.id)}"` : ''}>
+                            ${author.avatarHtml}
+                            <span class="${CSS_PREFIX}-author-name">${this.escapeHtmlAttr(author.name)}</span>
+                        </a>
+                    `).join('')}
+                </div>
+            `;
+            this.authorsContainer.classList.remove(`${CSS_PREFIX}-hidden`);
+        }
+
         // Whether dark mode is active, from config.theme + OS preference.
         isDarkTheme() {
             const preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -762,6 +1016,11 @@ import Typesense from 'typesense';
                 escapeHtmlAttr: (v) => this.escapeHtmlAttr(v),
                 toRelativeUrl: (u) => this.toRelativeUrl(u),
                 getSuggestions: () => this.getSuggestions(),
+                // Author profiles (showAuthorProfiles): matches for a query, and
+                // the profile behind a post's author name. Both are empty/null
+                // when the option is off or Ghost's list is unavailable.
+                getAuthorProfiles: (q) => this.matchAuthorProfiles(q),
+                findAuthorProfile: (name) => this.findAuthorProfile(name),
                 getSelectedFacets: () => this.selectedFacets,
                 toggleFacet: (field, value) => {
                     if (!this.selectedFacets[field]) this.selectedFacets[field] = new Set();
@@ -951,6 +1210,7 @@ import Typesense from 'typesense';
                             </div>
                             <div class="${CSS_PREFIX}-results-container">
                                 ${this.getCommonSearchesHtml()}
+                                ${this.config.showAuthorProfiles ? `<div id="${CSS_PREFIX}-authors" class="${CSS_PREFIX}-authors ${CSS_PREFIX}-hidden" role="group" aria-label="${this.escapeHtmlAttr(this.t('authorsGroupLabel'))}"></div>` : ''}
                                 <div id="${CSS_PREFIX}-facets" class="${CSS_PREFIX}-facets ${CSS_PREFIX}-hidden" role="group" aria-label="${this.t('ariaFacetsLabel')}"></div>
                                 <div id="${CSS_PREFIX}-hits" class="${CSS_PREFIX}-hits-list" role="region" aria-label="${this.t('ariaResultsLabel')}"></div>
                                 <div id="${CSS_PREFIX}-loading" class="${CSS_PREFIX}-loading ${CSS_PREFIX}-hidden" role="status" aria-live="polite">
@@ -989,6 +1249,7 @@ import Typesense from 'typesense';
             this.emptyState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-empty`);
             this.errorState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-error`);
             this.didYouMeanState = this.shadowRoot.querySelector(`#${CSS_PREFIX}-did-you-mean`);
+            this.authorsContainer = this.shadowRoot.querySelector(`#${CSS_PREFIX}-authors`);
         }
 
         getCommonSearchesHtml() {
@@ -1323,6 +1584,11 @@ import Typesense from 'typesense';
                 });
             }
 
+            // Ghost's author list, on first open only (no-op unless
+            // showAuthorProfiles is on). Before the URL query below runs, so a
+            // cached list is already there for it.
+            this.loadAuthorProfiles();
+
             // Update URL
             if (window.location.hash !== '#/search') {
                 history.replaceState(null, null, `${window.location.pathname}${window.location.search}#/search`);
@@ -1448,6 +1714,7 @@ import Typesense from 'typesense';
                 if (this.errorState) this.errorState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.loadingState) this.loadingState.classList.add(`${CSS_PREFIX}-hidden`);
                 if (this.facetsContainer) this.facetsContainer.classList.add(`${CSS_PREFIX}-hidden`);
+                this.renderAuthorProfiles('');
                 return;
             }
 
@@ -1511,6 +1778,9 @@ import Typesense from 'typesense';
             if (this.loadingState) this.loadingState.classList.remove(`${CSS_PREFIX}-hidden`);
             if (this.emptyState) this.emptyState.classList.add(`${CSS_PREFIX}-hidden`);
             if (this.errorState) this.errorState.classList.add(`${CSS_PREFIX}-hidden`);
+            // Authors are matched locally, so they show without waiting for
+            // the posts request.
+            this.renderAuthorProfiles(query);
 
             try {
                 const searchParams = this.getSearchParameters();
@@ -2487,10 +2757,17 @@ import Typesense from 'typesense';
             }
         }
 
-        navigateResults(direction) {
-            const results = [...this.shadowRoot.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
+        // Everything arrow keys move through, in document order: author
+        // profile links (above the posts), post results, and the suggestion
+        // chips of the empty state.
+        navigableResults() {
+            return [...this.shadowRoot.querySelectorAll(`.${CSS_PREFIX}-author-link, .${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
                 el => el.offsetParent !== null && !el.closest(`.${CSS_PREFIX}-hidden`)
             );
+        }
+
+        navigateResults(direction) {
+            const results = this.navigableResults();
 
             if (results.length === 0) return;
 
@@ -2509,13 +2786,13 @@ import Typesense from 'typesense';
         }
 
         handleEnterKey() {
-            const results = [...this.shadowRoot.querySelectorAll(`.${CSS_PREFIX}-result-link, .${CSS_PREFIX}-common-search-btn:not(.${CSS_PREFIX}-hidden)`)].filter(
-                el => el.offsetParent !== null && !el.closest(`.${CSS_PREFIX}-hidden`)
-            );
+            const results = this.navigableResults();
 
             if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
                 const selectedElement = results[this.selectedIndex];
-                if (selectedElement.classList.contains(`${CSS_PREFIX}-result-link`)) {
+                if (selectedElement.classList.contains(`${CSS_PREFIX}-author-link`)) {
+                    window.location.href = selectedElement.href;
+                } else if (selectedElement.classList.contains(`${CSS_PREFIX}-result-link`)) {
                     const position = Number(selectedElement.dataset.resultPosition);
                     this.trackClick(selectedElement.dataset.resultId, Number.isNaN(position) ? null : position);
                     window.location.href = selectedElement.href;

@@ -83,6 +83,8 @@ To trim result rows, set `showDates: false` to hide post dates in every layout, 
 
 To match your site's typography, set `fontFamily` to `'theme'` (Ghost's custom fonts from Settings → Design, otherwise your theme's body font), `'sans'`, `'serif'` or `'mono'`. It defaults to `'system'`, the stack the widget has always used. For any other font, set `--mp-font` (and optionally `--mp-font-heading` for result titles) on `magicpages-search` from Code Injection; see [Fonts](packages/search-ui/README.md#fonts).
 
+To link readers to author profile pages from search, set `showAuthorProfiles: true` — see [Author profiles](packages/search-ui/README.md#author-profiles).
+
 The install line is identical for every layout — one `<script>` tag. Only the layout you choose is downloaded by the reader. See the [search-ui README](packages/search-ui/README.md#ui-layouts) for the full layout, keyboard, theming, facet, and i18n reference.
 
 ### 3. Initial Content Sync

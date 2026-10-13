@@ -368,3 +368,165 @@ describe('palette group labels', () => {
     expect(groupNames(recent)).toEqual(['paletteRecentGroup']);
   });
 });
+
+describe('palette author profiles', () => {
+  // As the core's matchAuthorProfiles hands them over: avatarHtml is trusted
+  // markup the core already escaped.
+  const PROFILE = {
+    id: 'a1',
+    slug: 'jane',
+    name: 'Jane Doe',
+    url: '/author/jane/',
+    profileImage: null,
+    avatarHtml: '<span class="mp-search-author-avatar mp-search-author-avatar-empty" aria-hidden="true">J</span>'
+  };
+
+  function mountWithProfiles(config, profiles = [PROFILE]) {
+    const mounted = mountPalette(config);
+    mounted.ctx.getAuthorProfiles = vi.fn(() => profiles);
+    mounted.ctx.trackClick = vi.fn();
+    return mounted;
+  }
+
+  const groupNames = (shadow) =>
+    [...shadow.getElementById('mp-search-palette-listbox').querySelectorAll('[role="group"]')]
+      .map((g) => g.getAttribute('aria-label'));
+
+  const key = (layout, k, mods = {}) => layout.handleKeydown({ key: k, preventDefault() {}, ...mods });
+
+  it('leaves the surface as it was without author profiles', () => {
+    const { layout, shadow } = mountPalette();
+    layout.renderFacets(facetCounts);
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+    expect(groupNames(shadow)).toEqual(['palettePostsGroup', 'paletteTagsGroup', 'paletteAuthorsGroup']);
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).toBeNull();
+  });
+
+  it('puts an Authors group above Posts and keeps the filter-by-author group', () => {
+    const { layout, shadow, ctx } = mountWithProfiles();
+    layout.renderFacets(facetCounts);
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+
+    expect(ctx.getAuthorProfiles).toHaveBeenCalledWith('jane');
+    expect(groupNames(shadow)).toEqual([
+      'authorsGroupLabel', 'palettePostsGroup', 'paletteTagsGroup', 'paletteAuthorsGroup'
+    ]);
+    const row = shadow.querySelector('.mp-search-palette-row-profile');
+    expect(row.tagName).toBe('A');
+    expect(row.getAttribute('href')).toBe('/author/jane/');
+    expect(row.querySelector('.mp-search-palette-row-title').textContent).toBe('Jane Doe');
+    expect(row.querySelector('.mp-search-author-avatar-empty').textContent).toBe('J');
+  });
+
+  it('makes the profile row the first stop for the keyboard; Enter opens it', () => {
+    const { layout, shadow, ctx } = mountWithProfiles();
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+
+    const active = () => shadow.querySelector('.mp-search-palette-row-active');
+    expect(active().classList.contains('mp-search-palette-row-profile')).toBe(true);
+    key(layout, 'ArrowDown');
+    expect(active().classList.contains('mp-search-palette-row-post')).toBe(true);
+    key(layout, 'ArrowUp');
+
+    const hrefs = [];
+    const realLocation = window.location;
+    vi.stubGlobal('location', { set href(v) { hrefs.push(v); }, get href() { return realLocation.href; } });
+    try {
+      expect(key(layout, 'Enter')).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(hrefs).toEqual(['/author/jane/']);
+    // A profile is not a search result: no result click is reported.
+    expect(ctx.trackClick).not.toHaveBeenCalled();
+    // The query that found the author is remembered, as for a post.
+    expect(JSON.parse(window.localStorage.getItem('mp-search-palette-recent'))).toEqual(['jane']);
+  });
+
+  it('opens the profile in a new tab with Cmd/Ctrl+Enter', () => {
+    const { layout } = mountWithProfiles();
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    key(layout, 'Enter', { metaKey: true });
+    key(layout, 'Enter', { ctrlKey: true });
+
+    expect(open.mock.calls).toEqual([
+      ['/author/jane/', '_blank', 'noopener'],
+      ['/author/jane/', '_blank', 'noopener']
+    ]);
+    open.mockRestore();
+  });
+
+  it('shows the Authors group when no post matched', () => {
+    const { layout, shadow } = mountWithProfiles();
+    layout.renderEmpty('jane');
+
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).not.toBeNull();
+    expect(shadow.querySelector('.mp-search-palette-empty')).not.toBeNull();
+  });
+
+  it('drops the heading but keeps the group labelled when showGroupLabels is false', () => {
+    const { layout, shadow } = mountWithProfiles({ showGroupLabels: false });
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+
+    expect(shadow.querySelector('.mp-search-palette-group-label')).toBeNull();
+    expect(groupNames(shadow)[0]).toBe('authorsGroupLabel');
+  });
+
+  it('escapes the name and URL', () => {
+    const { layout, shadow } = mountWithProfiles({}, [{
+      ...PROFILE,
+      name: '<img src=x onerror=alert(1)>',
+      url: '/author/x/" onmouseover="alert(1)'
+    }]);
+    layout.renderResults(postModel(), { found: 1, query: 'x' });
+
+    const row = shadow.querySelector('.mp-search-palette-row-profile');
+    expect(row.querySelector('img')).toBeNull();
+    expect(row.hasAttribute('onmouseover')).toBe(false);
+    expect(row.querySelector('.mp-search-palette-row-title').textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('adds authors that arrive late to results already on screen, not to recent searches', () => {
+    let profiles = [];
+    const { layout, shadow, ctx } = mountWithProfiles({}, []);
+    ctx.getAuthorProfiles = vi.fn(() => profiles);
+
+    layout.renderInitial();
+    profiles = [PROFILE];
+    layout.renderAuthorProfiles();
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).toBeNull();
+
+    profiles = [];
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).toBeNull();
+    profiles = [PROFILE];
+    layout.renderAuthorProfiles();
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).not.toBeNull();
+  });
+
+  it('does not pair a pending query’s authors with the previous results', () => {
+    let profiles = [];
+    const { layout, shadow, ctx } = mountWithProfiles({}, []);
+    ctx.getAuthorProfiles = vi.fn(() => profiles);
+    layout.bindEvents();
+    layout.renderResults(postModel(), { found: 1, query: 'garden' });
+
+    // The reader types a name; the search for it is still in flight when
+    // Ghost's author list lands.
+    const input = shadow.querySelector('.mp-search-palette-input');
+    input.value = 'jane';
+    input.dispatchEvent(new Event('input'));
+    layout.renderLoading();
+    profiles = [PROFILE];
+    layout.renderAuthorProfiles();
+
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).toBeNull();
+    expect(shadow.querySelector('.mp-search-palette-status').textContent).toBe('paletteSearching');
+
+    layout.renderResults(postModel(), { found: 1, query: 'jane' });
+    expect(ctx.getAuthorProfiles).toHaveBeenLastCalledWith('jane');
+    expect(shadow.querySelector('.mp-search-palette-row-profile')).not.toBeNull();
+  });
+});

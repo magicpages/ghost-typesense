@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
-import { mockSearchResponse } from './src/mock.js';
+import { AUTHORS, authorAvatarSvg, mockSearchResponse } from './src/mock.js';
 
 const searchUiDist = resolve(__dirname, '../../packages/search-ui/dist');
 
@@ -124,9 +124,51 @@ function mockGhostMember() {
   };
 }
 
+/**
+ * Stand in for Ghost's public author search index and the avatars it links
+ * to, for the "Author profiles" option. Like Ghost, it rejects a request
+ * without a `key`; the playground injects a Ghost-style search script tag that
+ * carries one, so the widget finds the key the way it does on a real site.
+ */
+function mockGhostAuthors() {
+  return {
+    name: 'mock-ghost-authors',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = new URL(req.url ?? '', 'http://localhost');
+
+        const avatar = /^\/content\/images\/authors\/([\w-]+)\.svg$/.exec(url.pathname);
+        if (avatar) {
+          const svg = authorAvatarSvg(avatar[1]);
+          if (!svg) return next();
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'image/svg+xml');
+          res.end(svg);
+          return;
+        }
+
+        if (url.pathname !== '/ghost/api/content/search-index/authors/') return next();
+        if (!url.searchParams.get('key')) {
+          res.statusCode = 403;
+          res.end();
+          return;
+        }
+        const origin = `http://${req.headers.host}`;
+        const authors = AUTHORS.map((a) => ({
+          ...a,
+          profile_image: a.profile_image ? origin + a.profile_image : null
+        }));
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ authors }));
+      });
+    }
+  };
+}
+
 export default defineConfig({
   root: __dirname,
-  plugins: [serveSearchBundle(), mockTypesense(), mockGhostMember()],
+  plugins: [serveSearchBundle(), mockTypesense(), mockGhostMember(), mockGhostAuthors()],
   server: {
     port: 5174,
     open: true,

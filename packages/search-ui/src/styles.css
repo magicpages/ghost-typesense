@@ -426,6 +426,76 @@
     border-color: var(--accent-color);
 }
 
+/* Author profiles (showAuthorProfiles). The avatar classes are shared with
+   the palette and discovery layouts. */
+.mp-search-authors {
+    padding: calc(0.75 * var(--mp-rem)) 0 0;
+}
+
+.mp-search-authors-title {
+    color: var(--color-text-secondary);
+    font-size: calc(0.75 * var(--mp-rem));
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin: 0 0 calc(0.5 * var(--mp-rem));
+    text-transform: uppercase;
+}
+
+.mp-search-authors-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(0.5 * var(--mp-rem));
+}
+
+.mp-search-author-link {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(0.5 * var(--mp-rem));
+    max-width: 100%;
+    padding: calc(0.375 * var(--mp-rem)) calc(0.875 * var(--mp-rem)) calc(0.375 * var(--mp-rem)) calc(0.375 * var(--mp-rem));
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-result-bg);
+    color: var(--color-text);
+    font-size: calc(0.875 * var(--mp-rem));
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.mp-search-author-link:hover,
+.mp-search-author-link:focus,
+.mp-search-author-link.mp-search-selected {
+    background: var(--color-result-hover);
+    border-color: var(--accent-color);
+}
+
+.mp-search-author-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mp-search-author-avatar {
+    flex: 0 0 auto;
+    width: calc(1.75 * var(--mp-rem));
+    height: calc(1.75 * var(--mp-rem));
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+    background: var(--color-result-hover);
+}
+
+.mp-search-author-avatar-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(0.8125 * var(--mp-rem));
+    font-weight: 600;
+    color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+}
+
 /* Reader-facing facet filters */
 .mp-search-facets {
     display: flex;

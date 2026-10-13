@@ -12,6 +12,7 @@ const els = {
   ghostFonts: document.getElementById('opt-ghostfonts'),
   facets: document.getElementById('opt-facets'),
   searchAuthors: document.getElementById('opt-searchauthors'),
+  authorProfiles: document.getElementById('opt-authorprofiles'),
   suggestions: document.getElementById('opt-suggestions'),
   semantic: document.getElementById('opt-semantic'),
   analytics: document.getElementById('opt-analytics'),
@@ -183,6 +184,9 @@ function buildConfig(backend) {
   if (els.searchAuthors && els.searchAuthors.checked) {
     config.searchAuthors = true;
   }
+  if (els.authorProfiles && els.authorProfiles.checked) {
+    config.showAuthorProfiles = true;
+  }
   if (els.suggestions.checked) {
     config.pinnedSearches = ['Ghost'];
     config.commonSearches = ['tomatoes', 'garden', 'theme'];
@@ -215,6 +219,7 @@ function readControls() {
     ghostFonts: els.ghostFonts.checked,
     facets: els.facets.checked,
     searchAuthors: els.searchAuthors ? els.searchAuthors.checked : false,
+    authorProfiles: els.authorProfiles ? els.authorProfiles.checked : false,
     suggestions: els.suggestions.checked,
     semantic: els.semantic.checked,
     analytics: els.analytics.checked,
@@ -233,6 +238,7 @@ function restoreControls(state) {
   els.ghostFonts.checked = !!state.ghostFonts;
   els.facets.checked = !!state.facets;
   if (els.searchAuthors) els.searchAuthors.checked = !!state.searchAuthors;
+  if (els.authorProfiles) els.authorProfiles.checked = !!state.authorProfiles;
   els.suggestions.checked = !!state.suggestions;
   els.semantic.checked = !!state.semantic;
   els.analytics.checked = state.analytics !== false;
@@ -260,6 +266,19 @@ function applyGhostFonts(enabled) {
     root.removeProperty('--gh-font-heading');
     root.removeProperty('--gh-font-body');
   }
+}
+
+// Ghost's {{ghost_head}} emits its search script tag with the public Content
+// API key and the admin URL; the widget reads both for its author profiles
+// section, then removes the tag along with Ghost's own search. Injected here
+// so the playground exercises that path. This dev server answers the author
+// index (see vite.config.js); the key is only checked for presence.
+function injectGhostSearchTag() {
+  const script = document.createElement('script');
+  script.type = 'application/json';
+  script.setAttribute('data-sodo-search', `${location.origin}/`);
+  script.setAttribute('data-key', 'playground-content-key');
+  document.head.appendChild(script);
 }
 
 function apply() {
@@ -313,6 +332,7 @@ async function loadWidget() {
   }
 
   const config = buildConfig(backend);
+  if (config.showAuthorProfiles) injectGhostSearchTag();
   window.__MP_SEARCH_CONFIG__ = config;
   write(`config applied: ui=${config.uiStyle || 'modal'}, template=${config.template}, font=${config.fontFamily}, facets=${!!config.facets}, semantic=${!!config.semanticSearch}, analytics=${!!config.analytics}`);
 

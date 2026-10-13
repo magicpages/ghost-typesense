@@ -106,9 +106,26 @@ window.__MP_SEARCH_CONFIG__ = {
 | `showGroupLabels` | `Boolean` | No | `true` | Palette only: set to `false` to drop the group headings (Posts, Tags, Authors, Recent searches); groups stay labelled for screen readers |
 | `fontFamily` | `String` | No | `'system'` | Typeface for every layout: `'system'`, `'theme'`, `'sans'`, `'serif'` or `'mono'` (see [Fonts](#fonts)) |
 | `searchAuthors` | `Boolean` | No | `false` | Make author names matchable by keyword (see [Searchable fields](#searchable-fields)) |
+| `showAuthorProfiles` | `Boolean` | No | `false` | Show an Authors group linking to author profile pages (see [Author profiles](#author-profiles)) |
+| `ghostContentApiKey` | `String` | No | from Ghost's search script tag | Content API key used to load the author list; overrides the `data-key` of Ghost's search script |
+| `ghostUrl` | `String` | No | from Ghost's search script tag | Ghost admin URL used to load the author list; overrides the `data-sodo-search` of Ghost's search script |
 | `connectionTimeoutSeconds` | `Number` | No | `5` | How long a single search request may take before the browser aborts it (see [Connection tuning](#connection-tuning)) |
 | `numRetries` | `Number` | No | typesense-js default | How many times a failed request is retried across your nodes |
 | `retryIntervalSeconds` | `Number` | No | typesense-js default | Pause between those retries |
+
+### Author profiles
+
+Set `showAuthorProfiles: true` to show matching authors as links to their profile pages, next to the post results. The author list comes from Ghost's own search index endpoint, `GET {ghostUrl}/ghost/api/content/search-index/authors/?key={ghostContentApiKey}`, the same one Ghost's built-in search uses.
+
+Both values are read from Ghost's search script tag (`data-sodo-search` and `data-key`) before the widget removes it, so the Code Injection install needs nothing more. When that tag is not on the page, pass `ghostContentApiKey` (and `ghostUrl` if the Content API is not served on the site's own domain).
+
+- The list loads once, the first time the search opens, and is cached in `sessionStorage` for the rest of the visit. If it cannot be loaded, the section is left out and the search works as before.
+- An author matches when every word of the query starts a word of their name, ignoring case and accents (`zoe` finds "Zoë Ångström"). Queries shorter than two characters match no one, and at most three authors are shown.
+- **Modal** (list and grid): an Authors group above the results; the links join arrow-key and Enter navigation.
+- **Palette**: an Authors group above Posts; Enter opens the profile, Cmd/Ctrl+Enter opens it in a new tab. The "Filter by author" group is unchanged.
+- **Discovery**: a strip of author links above the results, and byline names in the preview link to their profiles.
+
+The group heading is translatable via `authorsGroupLabel`.
 
 ### Connection tuning
 
@@ -674,6 +691,7 @@ window.__MP_SEARCH_CONFIG__ = {
 | `loadingMessage` | "Searching..." | Message shown while searching |
 | `noResultsMessage` | "No results found for your search" | Message when a query genuinely matched nothing |
 | `didYouMeanLabel` | "Did you mean {q}?" | Spelling-correction prompt under the empty state (`{q}` is the suggested term) |
+| `authorsGroupLabel` | "Authors" | Heading of the author profiles group (`showAuthorProfiles`) |
 | `errorMessage` | "Search is temporarily unavailable" | Heading shown when the search request itself failed (timeout, offline, unreachable host) |
 | `errorHint` | "Check your connection and try again." | Second line of that failure state |
 | `navigateHint` | "to navigate" | Keyboard hint for navigation |
