@@ -20,7 +20,7 @@
   "dependencies": {
     "@magicpages/ghost-typesense-config": "^2.5.0",
     "@magicpages/ghost-typesense-core": "^2.5.0",
-    "@netlify/functions": "^6.0.0",
+    "@netlify/functions": "^6.0.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
